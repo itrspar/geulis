@@ -158,6 +158,7 @@
       <li><a href="#koneksi">Cara alat terhubung ke GeuLIS</a></li>
       <li><a href="#jaringan">Network Setup di alat</a></li>
       <li><a href="#daftar">Pendaftaran di GeuLIS</a></li>
+      <li><a href="#sampleid">Yang diketik petugas di alat</a></li>
       <li><a href="#pemeriksaan">Parameter &amp; pemetaan</a></li>
       <li><a href="#kekhasan">Kekhasan pesan EDAN</a></li>
       <li><a href="#qc">Kontrol mutu</a></li>
@@ -225,7 +226,36 @@
     <tr><td>Aktif</td><td>ya</td></tr>
   </table>
 
-  <h2 id="pemeriksaan">4. Parameter &amp; pemetaan</h2>
+  <h2 id="sampleid">4. Yang diketik petugas di alat</h2>
+  <p>
+    Di layar <strong>Enter Patient Information</strong> ada beberapa field. Yang menentukan
+    pencocokan ke order adalah <strong>Sample ID</strong> — <em>bukan</em> Patient ID.
+  </p>
+  <table>
+    <tr><th>Field di alat</th><th>Isi</th><th>Dipakai GeuLIS?</th></tr>
+    <tr><td><strong>Sample ID</strong></td><td>nomor untuk mencocokkan ke order (lihat bawah)</td><td>✅ inilah kuncinya (OBR-3)</td></tr>
+    <tr><td>Patient ID</td><td>nama / ID pasien untuk arsip alat</td><td>hanya masuk PID-3, tidak untuk pencocokan</td></tr>
+    <tr><td>Operator ID</td><td>ID petugas</td><td>arsip saja</td></tr>
+    <tr><td>Temperature</td><td>suhu pasien</td><td>memengaruhi parameter hitungan terkoreksi suhu, bukan pencocokan</td></tr>
+    <tr><td>FIO2</td><td>fraksi O2 inspirasi</td><td>memengaruhi pO2/FIO2, bukan pencocokan</td></tr>
+  </table>
+  <p>
+    Nilai <strong>Sample ID</strong> harus sama persis dengan <code>medical_record_no</code>,
+    <code>order_no</code>, <code>request_no</code>, atau <code>simrs_order_id</code> di GeuLIS.
+    Kotak Sample ID EDAN panjang (sampai ~22 karakter) — nomor order SIMRS muat.
+  </p>
+  <div class="alert danger">
+    <strong>ICU rutin AGD berkali-kali sehari pada pasien yang sama.</strong> Kalau petugas
+    mengetik <strong>nomor rekam medis</strong>, GeuLIS memilih order pasien itu yang
+    <em>terbaru</em> — hasil pagi bisa nyantol ke order sore. Untuk analisa gas darah,
+    <strong>ketik atau scan nomor order SIMRS</strong> (tiap order unik) — jangan nomor RM.
+  </div>
+  <p>
+    Paling aman: <strong>scan barcode label tabung</strong> (EDAN mendukung scanner Honeywell
+    1900). Pastikan barcode di label = nomor order.
+  </p>
+
+  <h2 id="pemeriksaan">5. Parameter &amp; pemetaan</h2>
   <p>
     Jenis pemeriksaan ditentukan oleh kartrid (BG3/BG8/BC4/BG9-Lac, dsb). Alat mengirim
     parameter terukur <em>dan</em> puluhan parameter hitungan. Yang sudah dipetakan di GeuLIS:
@@ -248,7 +278,7 @@
     bisa dipetakan lab bila diperlukan.
   </p>
 
-  <h2 id="kekhasan">5. Kekhasan pesan EDAN</h2>
+  <h2 id="kekhasan">6. Kekhasan pesan EDAN</h2>
   <pre>MSH|^~\&amp;|EDAN|i15^&lt;serial&gt;|LIS||&lt;waktu&gt;||ORU^R01||P|2.4||||0||UNICODE UTF-8||||
 PID|||&lt;patient id&gt;|||||M
 OBR|||&lt;sample id&gt;|EDAN^i15|||&lt;waktu tes&gt;||||||||Arterial|&lt;operator&gt;
@@ -288,7 +318,7 @@ OBX|7|ST|2|Temperature|37.0|&#8451;||...              &larr; OBX-3=2 info pasien
     <strong>Hasil Belum Cocok</strong>.
   </div>
 
-  <h2 id="qc">6. Kontrol mutu</h2>
+  <h2 id="qc">7. Kontrol mutu</h2>
   <p>
     Hasil kontrol EDAN dikenali lewat MSH-16 (<code>1</code> atau <code>2</code>) dan dipisahkan
     dari hasil pasien. Kalau lab ingin dinilai dengan aturan Westgard di modul QC GeuLIS,
@@ -297,7 +327,7 @@ OBX|7|ST|2|Temperature|37.0|&#8451;||...              &larr; OBX-3=2 info pasien
   </p>
   <p>Jenis sampel yang bisa dipilih di alat: Arterial, Venous, Mixed Venous, Capillary, Aqueous, CPB.</p>
 
-  <h2 id="kalibran">7. Kalibran kedaluwarsa &amp; mode simulasi</h2>
+  <h2 id="kalibran">8. Kalibran kedaluwarsa &amp; mode simulasi</h2>
   <p>
     Status bar alat menampilkan <em>"Calibrant Fluid Pack Expired, Invalid"</em> — tes pasien
     sungguhan terblokir sampai kalibran diganti (menu <strong>Setup › Replace Cal Pack</strong>,
@@ -314,12 +344,12 @@ OBX|7|ST|2|Temperature|37.0|&#8451;||...              &larr; OBX-3=2 info pasien
     setelah kalibran diganti.
   </div>
 
-  <h2 id="masalah">8. Kalau hasil tidak masuk</h2>
+  <h2 id="masalah">9. Kalau hasil tidak masuk</h2>
   <table>
     <tr><th>Gejala</th><th>Periksa</th></tr>
     <tr><td>Tidak ada apa pun di Log Alat</td><td>Protocol = <strong>HL7v2.4</strong>? Auto Transmit = <strong>On</strong>? Server IP <code>192.168.9.106</code>, Network Port <code>8000</code>? IP alat &amp; server satu subnet? Kabel LAN?</td></tr>
     <tr><td>Alat menyambung lalu diam</td><td>Protokol POCT1-A terpilih? Ganti ke HL7v2.4.</td></tr>
-    <tr><td>ACK datang tapi hasil hilang / status "partial"</td><td>Cek pesan "Incorrect string value" — kolom charset (lihat bagian 5). Restart backend menjalankan ensureSchema.</td></tr>
+    <tr><td>ACK datang tapi hasil hilang / status "partial"</td><td>Cek pesan "Incorrect string value" — kolom charset (lihat bagian 6). Restart backend menjalankan ensureSchema.</td></tr>
     <tr><td>Hasil masuk tapi ke "Hasil Belum Cocok"</td><td>Sample ID di alat cocok dengan nomor RM / permintaan / order SIMRS?</td></tr>
     <tr><td>Parameter <code>(T)</code> / rasio tanpa pemeriksaan tujuan</td><td>Belum dipetakan — normal. Petakan bila lab melaporkannya.</td></tr>
     <tr><td>Semua alat mati sekaligus</td><td>IP server GeuLIS berubah? Alat menyimpan <code>192.168.9.106</code>.</td></tr>

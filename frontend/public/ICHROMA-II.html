@@ -160,7 +160,7 @@
       <li><a href="#jaringan">Setting jaringan di alat</a></li>
       <li><a href="#lis">Setting LIS di alat</a></li>
       <li><a href="#daftar">Pendaftaran di GeuLIS</a></li>
-      <li><a href="#sampleid">Sample ID: batas 15 karakter</a></li>
+      <li><a href="#sampleid">Sample ID yang diketik petugas</a></li>
       <li><a href="#pemeriksaan">Pemeriksaan &amp; pemetaan kode</a></li>
       <li><a href="#kekhasan">Kekhasan pesan iChroma</a></li>
       <li><a href="#qc">Kontrol mutu</a></li>
@@ -239,22 +239,38 @@
     restart backend) supaya port-nya terbuka.
   </p>
 
-  <h2 id="sampleid">5. Sample ID: batas 15 karakter</h2>
-  <div class="alert danger">
-    <strong>Kotak Patient ID di iChroma maksimal 15 karakter.</strong> Nomor order SIMRS
-    (mis. <code>016/RSPAR/LABPK/IX/07/2026</code>, 26 karakter) dan nomor permintaan GeuLIS
-    lama <strong>tidak muat</strong> dan akan terpotong — hasilnya tidak akan cocok ke order.
-  </div>
-  <p>Yang boleh diketik petugas di alat (GeuLIS mencocokkan ke salah satu dari ini):</p>
-  <table>
-    <tr><th>ID</th><th>Panjang</th><th>Muat?</th></tr>
-    <tr><td>Nomor rekam medis (<code>medical_record_no</code>)</td><td>biasanya 6–8</td><td>✅ — rekomendasi utama</td></tr>
-    <tr><td>Nomor permintaan GeuLIS baru (<code>R</code> + YYMMDD + 6 digit)</td><td>13</td><td>✅</td></tr>
-    <tr><td>Nomor order SIMRS</td><td>panjang, tergantung format</td><td>❌ sering tidak muat</td></tr>
-  </table>
+  <h2 id="sampleid">5. Sample ID yang diketik petugas: batas 15 karakter</h2>
   <p>
-    Tetapkan <strong>satu</strong> jenis nomor sebagai SOP dan pastikan itu yang tercetak di
-    label tabung sampel.
+    GeuLIS mencocokkan hasil ke order lewat angka yang diketik di kotak
+    <strong>Patient ID</strong> alat. Angka itu harus sama persis dengan salah satu dari:
+    <code>medical_record_no</code>, <code>order_no</code>, <code>lab_requests.request_no</code>,
+    atau <code>lab_requests.simrs_order_id</code>.
+  </p>
+  <div class="alert danger">
+    <strong>Kotak Patient ID di iChroma maksimal 15 karakter.</strong> Nomor <code>request_no</code>
+    GeuLIS (<code>REQ</code> + tahun + tanggal + 6 digit = 17 karakter) <strong>tidak muat</strong>.
+    Nomor order SIMRS muat <em>hanya bila</em> formatnya ≤ 15 karakter.
+  </div>
+  <table>
+    <tr><th>ID</th><th>Panjang</th><th>Pakai untuk iChroma?</th></tr>
+    <tr><td>Nomor rekam medis (<code>medical_record_no</code>)</td><td>biasanya 6–8</td><td>✅ selalu muat</td></tr>
+    <tr><td>Nomor order SIMRS (<code>simrs_order_id</code>)</td><td>tergantung format Khanza</td><td>✅ jika ≤ 15 karakter — lihat catatan tes berulang</td></tr>
+    <tr><td>Nomor permintaan GeuLIS (<code>request_no</code>)</td><td>17</td><td>❌ tidak muat</td></tr>
+  </table>
+
+  <div class="alert danger">
+    <strong>Pasien yang sama, tes yang sama, dua kali sehari.</strong> Kalau petugas mengetik
+    <strong>nomor rekam medis</strong>, GeuLIS memilih order <em>terbaru</em> pasien itu untuk
+    tes tersebut — jadi hasil bisa nyantol ke order yang salah kalau kedua order sudah dibuat
+    sebelum sampel dijalankan. Untuk menghindari ini, gunakan <strong>nomor order SIMRS</strong>
+    (tiap order unik), asalkan formatnya muat di 15 karakter. Untuk HbA1c/tiroid yang jarang
+    diulang di hari sama, nomor rekam medis cukup.
+  </div>
+
+  <p>
+    Kalau ada, <strong>scan barcode label tabung</strong> lebih aman daripada mengetik — bebas
+    salah ketik dan otomatis membawa nomor order yang benar. iChroma mendukung barcode scanner
+    (opsional). Pastikan barcode di label = nomor order (atau nomor RM), sesuai SOP yang dipilih.
   </p>
 
   <h2 id="pemeriksaan">6. Pemeriksaan &amp; pemetaan kode</h2>
