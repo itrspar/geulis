@@ -78,17 +78,18 @@ router.post('/order', async (req, res) => {
         return { asli, kode: mappingDict[asli] || asli };
       });
 
-      const [testRows] = await conn.query('SELECT id, code FROM lab_tests WHERE code IN (?)', [
-        pasangan.map((x) => x.kode),
-      ]);
+      const [testRows] = await conn.query(
+        'SELECT id, code, name, instrument_id FROM lab_tests WHERE code IN (?)',
+        [pasangan.map((x) => x.kode)]
+      );
       if (testRows.length === 0) {
         await conn.rollback();
         return res.status(400).json({ error: 'Tidak ada kode tes yang valid ditemukan di LIS.' });
       }
-      const idPerKode = new Map(testRows.map((r) => [r.code, r.id]));
+      const rowPerKode = new Map(testRows.map((r) => [r.code, r]));
       for (const { asli, kode } of pasangan) {
-        const id = idPerKode.get(kode);
-        if (id != null) testIds.push({ id, asli });
+        const row = rowPerKode.get(kode);
+        if (row) testIds.push({ id: row.id, asli, kode, name: row.name || kode, instrument_id: row.instrument_id });
       }
     } else {
       await conn.rollback();
@@ -116,6 +117,28 @@ router.post('/order', async (req, res) => {
 
     await conn.commit();
     await audit(req, 'CREATE', 'request', requestId, { source: 'bridging', simrs_order_id, request_no, tests });
+
+    // Petunjuk untuk petugas: apa yang harus diketik/di-scan di alat.
+    // SIMRS menampilkannya sebagai notifikasi setelah "Kirim ke GeuLIS",
+    // jadi tidak perlu tahu pemetaan sendiri — kalau pemetaan berubah,
+    // petunjuknya ikut berubah. Alat lab TIDAK bisa menarik order dari LIS;
+    // petugas harus mengetik Sample ID secara manual.
+    const instIds = [...new Set(testIds.map((t) => t.instrument_id).filter(Boolean))];
+    let instruments = [];
+    if (instIds.length) {
+      const [instRows] = await pool.query(
+        'SELECT id, code, name FROM instruments WHERE id IN (?)',
+        [instIds]
+      );
+      const namaAlat = new Map(instRows.map((r) => [r.id, r]));
+      instruments = instIds.map((iid) => ({
+        code: namaAlat.get(iid)?.code || null,
+        name: namaAlat.get(iid)?.name || 'Alat tidak dikenal',
+        tests: testIds.filter((t) => t.instrument_id === iid).map((t) => t.name),
+      }));
+    }
+    const tanpaAlat = testIds.filter((t) => !t.instrument_id).map((t) => t.name);
+
     res.status(201).json({
       message: 'Order berhasil diterima',
       data: {
@@ -123,7 +146,21 @@ router.post('/order', async (req, res) => {
         simrs_order_id: simrs_order_id,
         patient_id: patientId,
         request_id: requestId
-      }
+      },
+      instructions: {
+        // Nomor yang harus diketik/di-scan petugas sebagai Sample ID di alat.
+        // Pakai nomor order (unik per order) supaya tidak keliru saat satu
+        // pasien punya beberapa order tes yang sama di hari yang sama.
+        sample_id: simrs_order_id,
+        medical_record_no: medical_record_no,
+        catatan: 'Ketik/scan Sample ID = nomor order ini di alat lab. '
+          + 'Kotak Patient ID iChroma II maksimal 15 karakter — bila nomor order '
+          + 'lebih panjang, pakai nomor rekam medis (hanya aman bila pasien tidak '
+          + 'punya order tes yang sama lain di hari yang sama).',
+        patient: { name: patient_name, medical_record_no },
+        instruments,           // [{ code, name, tests: [...] }]
+        tests_tanpa_alat: tanpaAlat,  // tes yang belum dipetakan ke alat mana pun
+      },
     });
 
   } catch (err) {
