@@ -42,6 +42,8 @@ const MANUAL = [
   { path: '/manual/bc-3600', label: 'Manual Alat BC-3600', icon: '🩸' },
   { path: '/manual/bc-11', label: 'Manual Alat BC-11', icon: '🔬' },
   { path: '/manual/afinion-2', label: 'Manual Alat Afinion 2', icon: '🩺' },
+  { path: '/manual/ichroma-2', label: 'Manual Alat iChroma II', icon: '🧫' },
+  { path: '/manual/edan-i15', label: 'Manual Alat EDAN i15', icon: '🫁' },
 ];
 
 export default function Layout() {

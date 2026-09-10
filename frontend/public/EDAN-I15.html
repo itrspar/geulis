@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Manual Alat EDAN i15 — GeuLIS</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #3b82f6;
+      --border: #334155;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      color: var(--text);
+      background-color: var(--bg);
+      margin: 0;
+      padding: 2rem;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: var(--surface);
+      padding: 2rem 3rem;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    h1 { color: #fff; border-bottom: 2px solid var(--primary); padding-bottom: 0.5rem; }
+    h2 { color: var(--primary); margin-top: 2rem; border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
+    h3 { color: #e2e8f0; margin-top: 1.5rem; }
+    p, li { color: var(--text-muted); }
+    strong { color: #e2e8f0; }
+    pre {
+      background: #000;
+      padding: 1rem;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-family: 'Courier New', Courier, monospace;
+      color: #10b981;
+      border: 1px solid var(--border);
+      font-size: 0.85em;
+      line-height: 1.45;
+    }
+    code {
+      background: #000;
+      color: #38bdf8;
+      padding: 0.2rem 0.4rem;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 0.9em;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.5rem 0;
+    }
+    th, td {
+      text-align: left;
+      padding: 12px;
+      border: 1px solid var(--border);
+      vertical-align: top;
+    }
+    th {
+      background: rgba(255,255,255,0.05);
+      color: #f1f5f9;
+    }
+    td code { font-size: 0.85em; }
+    .alert {
+      padding: 1rem;
+      margin: 1rem 0;
+      border-radius: 6px;
+      background: rgba(245, 158, 11, 0.1);
+      border-left: 4px solid #f59e0b;
+    }
+    .alert.info {
+      background: rgba(59, 130, 246, 0.1);
+      border-left-color: #3b82f6;
+    }
+    .alert.danger {
+      background: rgba(239, 68, 68, 0.1);
+      border-left-color: #ef4444;
+    }
+    .alert.ok {
+      background: rgba(16, 185, 129, 0.12);
+      border-left-color: #10b981;
+    }
+    .subtitle { color: var(--text-muted); margin-top: -0.5rem; }
+    .toc {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem 1.5rem;
+    }
+    .toc ol { margin: 0.5rem 0; padding-left: 1.2rem; }
+    .toc a { color: var(--primary); text-decoration: none; }
+    .toc a:hover { text-decoration: underline; }
+    ol li, ul li { margin: 0.3rem 0; }
+    hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+    .footer { color: var(--text-muted); font-size: 0.85em; font-style: italic; }
+
+    .print-btn {
+      position: fixed; top: 1rem; right: 1rem; z-index: 100;
+      background: var(--primary); color: #fff; border: none;
+      padding: 0.6rem 1.1rem; border-radius: 8px; cursor: pointer;
+      font-size: 0.9rem; font-weight: 600;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.35);
+    }
+    .print-btn:hover { filter: brightness(1.1); }
+
+    @media print {
+      @page { size: A4 portrait; margin: 1.2cm; }
+      body { background: #fff; color: #000; padding: 0; }
+      .container {
+        max-width: 100%; margin: 0; padding: 0;
+        background: #fff; color: #000; box-shadow: none; border-radius: 0;
+      }
+      h1 { color: #000; border-bottom-color: #000; }
+      h2 { color: #000; border-bottom-color: #999; page-break-after: avoid; }
+      h3 { color: #000; page-break-after: avoid; }
+      p, li, strong, td, th, .subtitle { color: #000 !important; }
+      a { color: #000; text-decoration: none; }
+      pre {
+        background: #f4f4f4; color: #000; border: 1px solid #bbb;
+        page-break-inside: avoid; font-size: 0.75em;
+      }
+      code { background: #eee; color: #000; }
+      th { background: #e8e8e8 !important; color: #000; }
+      table, tr, img { page-break-inside: avoid; }
+      .toc { background: #f7f7f7; border: 1px solid #bbb; }
+      .toc a { color: #000; }
+      .alert, .alert.info, .alert.danger, .alert.ok { background: #f7f7f7 !important; border-left: 4px solid #888; color: #000; }
+      .print-btn, .no-print { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <button class="print-btn" onclick="window.print()">🖨️ Cetak</button>
+
+  <h1>Manual Alat — EDAN i15</h1>
+  <p class="subtitle">Analyzer <em>blood gas &amp; kimia klinik point-of-care</em> berbasis kartrid (EDAN) · didaftarkan di GeuLIS sebagai <code>EDAN-I15-01</code></p>
+
+  <div class="alert ok">
+    <strong>✅ Status: tersambung dan jalan, round-trip order teruji.</strong>
+    Per 10 September 2026: alat mengirim HL7 ke GeuLIS, hasil cocok ke order SIMRS dan masuk ke
+    <code>lab_results</code>, flag rendah/tinggi berfungsi. Uji dengan <strong>sampel darah
+    sungguhan masih tertunda</strong> — kalibran alat kedaluwarsa dan harus diganti dulu.
+  </div>
+
+  <div class="toc">
+    <strong>Daftar Isi</strong>
+    <ol>
+      <li><a href="#koneksi">Cara alat terhubung ke GeuLIS</a></li>
+      <li><a href="#jaringan">Network Setup di alat</a></li>
+      <li><a href="#daftar">Pendaftaran di GeuLIS</a></li>
+      <li><a href="#pemeriksaan">Parameter &amp; pemetaan</a></li>
+      <li><a href="#kekhasan">Kekhasan pesan EDAN</a></li>
+      <li><a href="#qc">Kontrol mutu</a></li>
+      <li><a href="#kalibran">Kalibran kedaluwarsa &amp; mode simulasi</a></li>
+      <li><a href="#masalah">Kalau hasil tidak masuk</a></li>
+    </ol>
+  </div>
+
+  <h2 id="koneksi">1. Cara alat terhubung ke GeuLIS</h2>
+  <p>
+    <strong>Alat yang menghubungi GeuLIS.</strong> Di Network Setup yang diisi adalah alamat
+    server GeuLIS. GeuLIS menunggu di port <code>8000</code>.
+  </p>
+<pre>EDAN i15 192.168.9.105  ──menghubungi──▶  GeuLIS 192.168.9.106:8000
+                        ──kirim hasil HL7 (ORU^R01, MLLP)──▶
+                        ◀── ACK^R01</pre>
+  <p>
+    Framing pesannya <strong>MLLP</strong> (<code>0x0B ... 0x1C 0x0D</code>). Protokol yang
+    dipakai adalah <strong>HL7 v2.4</strong>.
+  </p>
+  <div class="alert info">
+    Alat menyediakan dua protokol: <strong>HL7 v2.4</strong> dan <strong>POCT1-A</strong>.
+    Pakai HL7 — GeuLIS belum berbicara POCT1-A.
+  </div>
+
+  <h2 id="jaringan">2. Network Setup di alat</h2>
+  <p>Menu <strong>Setup › System Setup › Network</strong> — tiga tab yang perlu diisi:</p>
+
+  <h3>Tab Communication</h3>
+  <table>
+    <tr><th>Isian</th><th>Nilai</th></tr>
+    <tr><td>Protocol</td><td><strong>HL7v2.4</strong> (bawaan <code>POCT1-A</code> — harus diubah)</td></tr>
+    <tr><td>Auto Transmit</td><td><strong>On</strong> (bawaan Off — ini yang membuat hasil terkirim otomatis tiap selesai tes)</td></tr>
+    <tr><td>Mode</td><td><code>Short</code></td></tr>
+    <tr><td>Net</td><td><code>LAN</code></td></tr>
+    <tr><td>Encryption</td><td><code>None</code></td></tr>
+    <tr><td>FireWall</td><td><code>Off</code></td></tr>
+    <tr><td>Server IP</td><td><code>192.168.9.106</code> — alamat server GeuLIS</td></tr>
+  </table>
+
+  <h3>Tab Local IP</h3>
+  <table>
+    <tr><th>Isian</th><th>Nilai</th></tr>
+    <tr><td>Connection Type</td><td><strong>Static IP Address</strong></td></tr>
+    <tr><td>IP</td><td><code>192.168.9.105</code></td></tr>
+    <tr><td>Mask</td><td><code>255.255.255.128</code></td></tr>
+    <tr><td>Gateway</td><td><code>192.168.9.2</code></td></tr>
+  </table>
+
+  <h3>Tab Properties</h3>
+  <table>
+    <tr><th>Isian</th><th>Nilai</th></tr>
+    <tr><td>Network Port</td><td><code>8000</code> — harus sama dengan port yang dibuka GeuLIS</td></tr>
+  </table>
+
+  <h2 id="daftar">3. Pendaftaran di GeuLIS</h2>
+  <p>Menu <strong>Alat Laboratorium</strong> → sudah terdaftar:</p>
+  <table>
+    <tr><th>Kolom</th><th>Nilai</th></tr>
+    <tr><td>Kode</td><td><code>EDAN-I15-01</code></td></tr>
+    <tr><td>Nama</td><td>EDAN i15 Blood Gas</td></tr>
+    <tr><td>Protokol</td><td><code>hl7</code></td></tr>
+    <tr><td>Mode koneksi</td><td><code>Alat menghubungi LIS</code> (server)</td></tr>
+    <tr><td>Port</td><td><code>8000</code></td></tr>
+    <tr><td>Aktif</td><td>ya</td></tr>
+  </table>
+
+  <h2 id="pemeriksaan">4. Parameter &amp; pemetaan</h2>
+  <p>
+    Jenis pemeriksaan ditentukan oleh kartrid (BG3/BG8/BC4/BG9-Lac, dsb). Alat mengirim
+    parameter terukur <em>dan</em> puluhan parameter hitungan. Yang sudah dipetakan di GeuLIS:
+  </p>
+  <table>
+    <tr><th>Jenis</th><th>Parameter (kode alat)</th></tr>
+    <tr><td>Terukur — <strong>ada rentang rujukan</strong> (dari OBX-7 pesan alat)</td>
+        <td><code>Na+</code>, <code>K+</code>, <code>Ca++</code>, <code>Cl-</code>, <code>pH</code>, <code>pO2</code>, <code>pCO2</code>, <code>Hct</code></td></tr>
+    <tr><td>Terukur — rujukan kosong</td><td><code>Glu</code>, <code>Lac</code></td></tr>
+    <tr><td>Hitungan — rujukan kosong</td><td><code>HCO3-act</code>, <code>HCO3-std</code>, <code>BE(ecf)</code>, <code>BE(B)</code>, <code>ctCO2</code>, <code>sO2(est)</code>, <code>tHb(est)</code>, <code>mOsm</code>, <code>cH+</code>, <code>BB(B)</code></td></tr>
+  </table>
+  <div class="alert">
+    <strong>Rentang rujukan 8 parameter terukur diambil dari konfigurasi alat</strong> supaya
+    flag GeuLIS sama dengan flag di layar alat — bukan angka karangan, tapi tetap perlu
+    dikonfirmasi lab. Parameter hitungan sengaja dikosongkan; nilai kritis semua kosong.
+  </div>
+  <p>
+    Parameter terkoreksi suhu (<code>pH(T)</code>, <code>pO2(T)</code>, dst), rasio a/A, dan RI
+    <strong>tidak dipetakan</strong>. Nilainya tetap tersimpan (tanpa pemeriksaan tujuan) dan
+    bisa dipetakan lab bila diperlukan.
+  </p>
+
+  <h2 id="kekhasan">5. Kekhasan pesan EDAN</h2>
+  <pre>MSH|^~\&amp;|EDAN|i15^&lt;serial&gt;|LIS||&lt;waktu&gt;||ORU^R01||P|2.4||||0||UNICODE UTF-8||||
+PID|||&lt;patient id&gt;|||||M
+OBR|||&lt;sample id&gt;|EDAN^i15|||&lt;waktu tes&gt;||||||||Arterial|&lt;operator&gt;
+OBX|0|ST|0|Na+|141|mmol/L|138^146||...        &larr; OBX-3=0 terukur, nama di OBX-4
+OBX|5|ST|1|tHb(est)|15.5|g/dL|2.9^27.7||...    &larr; OBX-3=1 hitungan
+OBX|7|ST|2|Temperature|37.0|&#8451;||...              &larr; OBX-3=2 info pasien, DILEWATI</pre>
+  <ul>
+    <li>
+      <strong>OBX-3 hanya angka tipe</strong> — <code>0</code> = parameter terukur,
+      <code>1</code> = hitungan, <code>2</code> = info pasien (Temperature, FIO2). Nama
+      parameter sungguhnya ada di <strong>OBX-4</strong>. Baris tipe <code>2</code> tidak
+      disimpan sebagai hasil. Parser sudah menangani.
+    </li>
+    <li>
+      <strong>Pembeda QC ada di MSH-16</strong>: <code>0</code> = hasil pasien, <code>1</code> =
+      kontrol, <code>2</code> = verifikasi kalibrasi.
+    </li>
+    <li>
+      <strong>OBX-2 selalu <code>ST</code></strong> walau nilainya angka. OBX-7 = rentang
+      rujukan format <code>bawah^atas</code>. OBX-8 = flag (kosong / <code>&#8593;</code> / <code>&#8595;</code>).
+    </li>
+    <li>
+      <strong>Sample ID di OBR-3</strong> (posisi standar). Patient ID di PID-3. Petugas
+      mengetik keduanya di layar "Enter Patient Information" saat menjalankan tes.
+    </li>
+  </ul>
+  <div class="alert danger">
+    <strong>Karakter <code>&#8593; &#8595; &#8451;</code> pernah menggagalkan penyimpanan hasil.</strong> Kolom
+    <code>raw_message</code>/<code>raw_data</code> dulu berformat latin1 sehingga karakter ini
+    membuat INSERT ditolak dan hasil pasien hilang tanpa jejak. Sudah diperbaiki — kolom
+    dikonversi ke utf8mb4 otomatis tiap backend start. Kalau muncul lagi setelah pindah
+    server/DB, jalankan ulang <code>ensureSchema</code>.
+  </div>
+  <div class="alert">
+    <strong>Kiriman riwayat.</strong> Saat koneksi pertama dinyalakan, alat membuang hasil lama
+    di memorinya ke GeuLIS (sudah terjadi: 2 sampel lama). Semua mendarat di
+    <strong>Hasil Belum Cocok</strong>.
+  </div>
+
+  <h2 id="qc">6. Kontrol mutu</h2>
+  <p>
+    Hasil kontrol EDAN dikenali lewat MSH-16 (<code>1</code> atau <code>2</code>) dan dipisahkan
+    dari hasil pasien. Kalau lab ingin dinilai dengan aturan Westgard di modul QC GeuLIS,
+    daftarkan lot kontrol beserta mean/SD lebih dulu — tanpa itu, nilai tetap disimpan dengan
+    verdict <code>unknown</code>.
+  </p>
+  <p>Jenis sampel yang bisa dipilih di alat: Arterial, Venous, Mixed Venous, Capillary, Aqueous, CPB.</p>
+
+  <h2 id="kalibran">7. Kalibran kedaluwarsa &amp; mode simulasi</h2>
+  <p>
+    Status bar alat menampilkan <em>"Calibrant Fluid Pack Expired, Invalid"</em> — tes pasien
+    sungguhan terblokir sampai kalibran diganti (menu <strong>Setup › Replace Cal Pack</strong>,
+    scan barcode kalibran baru).
+  </p>
+  <p>Untuk latihan alur sebelum kalibran baru datang:</p>
+  <ul>
+    <li><strong>DEMO Test</strong> — logout, login dengan username &amp; password keduanya <code>demo</code>. Menjalankan simulasi penuh dengan hasil karangan tetap. Tidak butuh darah.</li>
+    <li><strong>Internal Simulator</strong> — menu <strong>Setup › Test Setup › Internal Simulator</strong>.</li>
+  </ul>
+  <div class="alert">
+    Data DEMO/simulator <strong>belum tentu ikut dikirim</strong> ke LIS — banyak alat sengaja
+    mengecualikannya. Kalau tidak muncul di Log Alat, itu wajar; uji sungguhan tetap perlu
+    setelah kalibran diganti.
+  </div>
+
+  <h2 id="masalah">8. Kalau hasil tidak masuk</h2>
+  <table>
+    <tr><th>Gejala</th><th>Periksa</th></tr>
+    <tr><td>Tidak ada apa pun di Log Alat</td><td>Protocol = <strong>HL7v2.4</strong>? Auto Transmit = <strong>On</strong>? Server IP <code>192.168.9.106</code>, Network Port <code>8000</code>? IP alat &amp; server satu subnet? Kabel LAN?</td></tr>
+    <tr><td>Alat menyambung lalu diam</td><td>Protokol POCT1-A terpilih? Ganti ke HL7v2.4.</td></tr>
+    <tr><td>ACK datang tapi hasil hilang / status "partial"</td><td>Cek pesan "Incorrect string value" — kolom charset (lihat bagian 5). Restart backend menjalankan ensureSchema.</td></tr>
+    <tr><td>Hasil masuk tapi ke "Hasil Belum Cocok"</td><td>Sample ID di alat cocok dengan nomor RM / permintaan / order SIMRS?</td></tr>
+    <tr><td>Parameter <code>(T)</code> / rasio tanpa pemeriksaan tujuan</td><td>Belum dipetakan — normal. Petakan bila lab melaporkannya.</td></tr>
+    <tr><td>Semua alat mati sekaligus</td><td>IP server GeuLIS berubah? Alat menyimpan <code>192.168.9.106</code>.</td></tr>
+  </table>
+  <p>Log mentah tiap pesan masuk ditulis ke <code>/tmp/lis_debug.log</code> di server.</p>
+
+  <hr>
+  <p class="footer">
+    Dokumen ini bagian dari GeuLIS. Perbarui bila setelan alat, IP, atau pemetaan berubah.
+  </p>
+</div>
+
+</body>
+</html>

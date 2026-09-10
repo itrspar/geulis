@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Manual Alat iChroma II — GeuLIS</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #3b82f6;
+      --border: #334155;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      color: var(--text);
+      background-color: var(--bg);
+      margin: 0;
+      padding: 2rem;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: var(--surface);
+      padding: 2rem 3rem;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    h1 { color: #fff; border-bottom: 2px solid var(--primary); padding-bottom: 0.5rem; }
+    h2 { color: var(--primary); margin-top: 2rem; border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
+    h3 { color: #e2e8f0; margin-top: 1.5rem; }
+    p, li { color: var(--text-muted); }
+    strong { color: #e2e8f0; }
+    pre {
+      background: #000;
+      padding: 1rem;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-family: 'Courier New', Courier, monospace;
+      color: #10b981;
+      border: 1px solid var(--border);
+      font-size: 0.85em;
+      line-height: 1.45;
+    }
+    code {
+      background: #000;
+      color: #38bdf8;
+      padding: 0.2rem 0.4rem;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 0.9em;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.5rem 0;
+    }
+    th, td {
+      text-align: left;
+      padding: 12px;
+      border: 1px solid var(--border);
+      vertical-align: top;
+    }
+    th {
+      background: rgba(255,255,255,0.05);
+      color: #f1f5f9;
+    }
+    td code { font-size: 0.85em; }
+    .alert {
+      padding: 1rem;
+      margin: 1rem 0;
+      border-radius: 6px;
+      background: rgba(245, 158, 11, 0.1);
+      border-left: 4px solid #f59e0b;
+    }
+    .alert.info {
+      background: rgba(59, 130, 246, 0.1);
+      border-left-color: #3b82f6;
+    }
+    .alert.danger {
+      background: rgba(239, 68, 68, 0.1);
+      border-left-color: #ef4444;
+    }
+    .alert.ok {
+      background: rgba(16, 185, 129, 0.12);
+      border-left-color: #10b981;
+    }
+    .subtitle { color: var(--text-muted); margin-top: -0.5rem; }
+    .toc {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem 1.5rem;
+    }
+    .toc ol { margin: 0.5rem 0; padding-left: 1.2rem; }
+    .toc a { color: var(--primary); text-decoration: none; }
+    .toc a:hover { text-decoration: underline; }
+    ol li, ul li { margin: 0.3rem 0; }
+    hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+    .footer { color: var(--text-muted); font-size: 0.85em; font-style: italic; }
+
+    .print-btn {
+      position: fixed; top: 1rem; right: 1rem; z-index: 100;
+      background: var(--primary); color: #fff; border: none;
+      padding: 0.6rem 1.1rem; border-radius: 8px; cursor: pointer;
+      font-size: 0.9rem; font-weight: 600;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.35);
+    }
+    .print-btn:hover { filter: brightness(1.1); }
+
+    @media print {
+      @page { size: A4 portrait; margin: 1.2cm; }
+      body { background: #fff; color: #000; padding: 0; }
+      .container {
+        max-width: 100%; margin: 0; padding: 0;
+        background: #fff; color: #000; box-shadow: none; border-radius: 0;
+      }
+      h1 { color: #000; border-bottom-color: #000; }
+      h2 { color: #000; border-bottom-color: #999; page-break-after: avoid; }
+      h3 { color: #000; page-break-after: avoid; }
+      p, li, strong, td, th, .subtitle { color: #000 !important; }
+      a { color: #000; text-decoration: none; }
+      pre {
+        background: #f4f4f4; color: #000; border: 1px solid #bbb;
+        page-break-inside: avoid; font-size: 0.75em;
+      }
+      code { background: #eee; color: #000; }
+      th { background: #e8e8e8 !important; color: #000; }
+      table, tr, img { page-break-inside: avoid; }
+      .toc { background: #f7f7f7; border: 1px solid #bbb; }
+      .toc a { color: #000; }
+      .alert, .alert.info, .alert.danger, .alert.ok { background: #f7f7f7 !important; border-left: 4px solid #888; color: #000; }
+      .print-btn, .no-print { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <button class="print-btn" onclick="window.print()">🖨️ Cetak</button>
+
+  <h1>Manual Alat — iChroma II</h1>
+  <p class="subtitle">Pembaca <em>immunoassay fluoresensi</em> berbasis kartrid (Boditech) · didaftarkan di GeuLIS sebagai <code>ICHROMA2-01</code></p>
+
+  <div class="alert ok">
+    <strong>✅ Status: tersambung dan jalan.</strong>
+    Per 7 September 2026 alat mengirim hasil HL7 ke GeuLIS lewat jaringan, GeuLIS membalas ACK,
+    dan hasil masuk ke <strong>Hasil Belum Cocok</strong> (atau langsung ke pasien bila Sample ID
+    cocok dengan order). Jalur pasien sungguhan yang terhubung ke order SIMRS <strong>belum
+    diuji</strong> — baru QC dan kiriman riwayat.
+  </div>
+
+  <div class="toc">
+    <strong>Daftar Isi</strong>
+    <ol>
+      <li><a href="#koneksi">Cara alat terhubung ke GeuLIS</a></li>
+      <li><a href="#jaringan">Setting jaringan di alat</a></li>
+      <li><a href="#lis">Setting LIS di alat</a></li>
+      <li><a href="#daftar">Pendaftaran di GeuLIS</a></li>
+      <li><a href="#sampleid">Sample ID: batas 15 karakter</a></li>
+      <li><a href="#pemeriksaan">Pemeriksaan &amp; pemetaan kode</a></li>
+      <li><a href="#kekhasan">Kekhasan pesan iChroma</a></li>
+      <li><a href="#qc">Kontrol mutu</a></li>
+      <li><a href="#masalah">Kalau hasil tidak masuk</a></li>
+    </ol>
+  </div>
+
+  <h2 id="koneksi">1. Cara alat terhubung ke GeuLIS</h2>
+  <p>
+    <strong>Alat yang menghubungi GeuLIS.</strong> Di menu iChroma yang diisi adalah alamat
+    server GeuLIS, bukan alamat alat. GeuLIS hanya menunggu di sebuah port TCP.
+  </p>
+<pre>iChroma II 192.168.9.107  ──menghubungi──▶  GeuLIS 192.168.9.106:6000
+                          ──kirim hasil HL7 (OUL^R24, MLLP)──▶
+                          ◀── ACK^R01</pre>
+  <p>
+    Framing pesannya <strong>MLLP</strong>: tiap pesan diapit <code>0x0B</code> di depan dan
+    <code>0x1C 0x0D</code> di belakang. GeuLIS sudah menangani ini.
+  </p>
+  <div class="alert info">
+    Karena alat yang menghubungi, kalau hasil tidak masuk sumber masalahnya hampir selalu di
+    sisi alat atau jaringan — bukan di GeuLIS.
+  </div>
+
+  <h2 id="jaringan">2. Setting jaringan di alat</h2>
+  <p>Menu <strong>Setup › Communication › Ethernet</strong>:</p>
+  <table>
+    <tr><th>Isian</th><th>Nilai</th></tr>
+    <tr><td>Ethernet Connection</td><td><strong>ON</strong></td></tr>
+    <tr><td>Configuration › Connection Type</td><td><strong>Manual</strong> (IP tetap)</td></tr>
+    <tr><td>IP address</td><td><code>192.168.9.107</code></td></tr>
+    <tr><td>Netmask</td><td><code>255.255.255.128</code></td></tr>
+    <tr><td>Gateway address</td><td><code>192.168.9.2</code></td></tr>
+    <tr><td>DNS address</td><td><code>8.8.8.8</code></td></tr>
+  </table>
+  <p>
+    Tombol <strong>Ethernet Test</strong> membuka peramban mini dan memuat Google — kalau
+    halaman tampil, lapisan jaringan alat sudah benar.
+  </p>
+  <div class="alert">
+    <strong>Manual PDF pabrikan (2018) menyesatkan.</strong> Manual itu menyatakan Ethernet/WIFI
+    "will be presented in near future". Itu <strong>tidak berlaku</strong> untuk firmware alat
+    yang terpasang (App <code>IR2.01.11.00</code>, Firmware <code>FI2.WW.02.33</code>) — di
+    firmware ini Ethernet dan protokol HL7 sudah aktif penuh. Selalu percaya menu alat, bukan
+    manual cetak.
+  </div>
+
+  <h2 id="lis">3. Setting LIS di alat</h2>
+  <p>Menu <strong>Setup › Communication › PC</strong> (layar "PC Connection"):</p>
+  <table>
+    <tr><th>Isian</th><th>Nilai</th></tr>
+    <tr><td>Protocol</td><td><strong>HL7</strong></td></tr>
+    <tr><td>Interface</td><td><strong>NETWORK</strong> (bukan RS-232C)</td></tr>
+  </table>
+  <p>Setelah memilih NETWORK, muncul <strong>LIS Server Setting</strong>:</p>
+  <table>
+    <tr><th>Isian</th><th>Nilai</th></tr>
+    <tr><td>Metode</td><td><strong>TCP/IP</strong> (bukan Http method)</td></tr>
+    <tr><td>IP Address</td><td><code>192.168.9.106</code> — alamat server GeuLIS</td></tr>
+    <tr><td>Port Number</td><td><code>6000</code></td></tr>
+  </table>
+
+  <h2 id="daftar">4. Pendaftaran di GeuLIS</h2>
+  <p>Menu <strong>Alat Laboratorium</strong> → sudah terdaftar:</p>
+  <table>
+    <tr><th>Kolom</th><th>Nilai</th></tr>
+    <tr><td>Kode</td><td><code>ICHROMA2-01</code></td></tr>
+    <tr><td>Nama</td><td>iChroma II</td></tr>
+    <tr><td>Protokol</td><td><code>hl7</code></td></tr>
+    <tr><td>Mode koneksi</td><td><code>Alat menghubungi LIS</code> (server)</td></tr>
+    <tr><td>Port</td><td><code>6000</code></td></tr>
+    <tr><td>Aktif</td><td>ya</td></tr>
+  </table>
+  <p>
+    Setelah mengubah data alat, tekan <strong>Reload Listener</strong> di halaman itu (atau
+    restart backend) supaya port-nya terbuka.
+  </p>
+
+  <h2 id="sampleid">5. Sample ID: batas 15 karakter</h2>
+  <div class="alert danger">
+    <strong>Kotak Patient ID di iChroma maksimal 15 karakter.</strong> Nomor order SIMRS
+    (mis. <code>016/RSPAR/LABPK/IX/07/2026</code>, 26 karakter) dan nomor permintaan GeuLIS
+    lama <strong>tidak muat</strong> dan akan terpotong — hasilnya tidak akan cocok ke order.
+  </div>
+  <p>Yang boleh diketik petugas di alat (GeuLIS mencocokkan ke salah satu dari ini):</p>
+  <table>
+    <tr><th>ID</th><th>Panjang</th><th>Muat?</th></tr>
+    <tr><td>Nomor rekam medis (<code>medical_record_no</code>)</td><td>biasanya 6–8</td><td>✅ — rekomendasi utama</td></tr>
+    <tr><td>Nomor permintaan GeuLIS baru (<code>R</code> + YYMMDD + 6 digit)</td><td>13</td><td>✅</td></tr>
+    <tr><td>Nomor order SIMRS</td><td>panjang, tergantung format</td><td>❌ sering tidak muat</td></tr>
+  </table>
+  <p>
+    Tetapkan <strong>satu</strong> jenis nomor sebagai SOP dan pastikan itu yang tercetak di
+    label tabung sampel.
+  </p>
+
+  <h2 id="pemeriksaan">6. Pemeriksaan &amp; pemetaan kode</h2>
+  <p>
+    Jenis pemeriksaan ditentukan oleh kartrid, bukan setelan alat. Yang sudah dipetakan di
+    GeuLIS (menu <strong>Alat Laboratorium › Mapping</strong>):
+  </p>
+  <table>
+    <tr><th>Kode di alat</th><th>Kode GeuLIS</th><th>Satuan</th></tr>
+    <tr><td><code>HbA1c</code></td><td><code>HbA1c</code></td><td>%</td></tr>
+    <tr><td><code>T3</code></td><td><code>T3</code></td><td>nmol/L</td></tr>
+    <tr><td><code>T4</code></td><td><code>T4</code></td><td>nmol/L</td></tr>
+    <tr><td><code>TSH</code></td><td><code>TSH</code></td><td>uIU/mL</td></tr>
+  </table>
+  <div class="alert">
+    <strong>Rentang rujukan keempat tes ini masih kosong.</strong> Lab harus mengisinya lewat
+    menu <strong>Tes Laboratorium</strong> sebelum flag rendah/tinggi bisa dipercaya.
+  </div>
+  <div class="alert danger">
+    <strong>Jangan pakai kode <code>PCT</code> untuk Procalcitonin.</strong> Kode <code>PCT</code>
+    di katalog sudah dipakai untuk <em>Plateletcrit</em> (hematologi Mindray, satuan %) — beda
+    total dari Procalcitonin (ng/mL). Kalau nanti kartrid PCT dipakai, buat kode tersendiri
+    (mis. <code>PROCAL</code>) lebih dulu.
+  </div>
+  <p>
+    Kartrid lain (CRP, PSA, D-Dimer, Ferritin, dll) belum dipetakan. Kalau mulai dipakai,
+    petakan dulu — hasil dengan kode tak dikenal tetap tersimpan tapi tidak menempel ke
+    pemeriksaan.
+  </p>
+
+  <h2 id="kekhasan">7. Kekhasan pesan iChroma</h2>
+  <ul>
+    <li>
+      <strong>MSH-11 selalu <code>T</code>.</strong> Alat mengirim <code>T</code> (Training)
+      untuk semua hasil, baik pasien maupun kontrol. Parser GeuLIS <em>tidak</em> menganggap
+      ini sebagai penanda QC untuk pesan <code>OUL^R24</code> — kalau tidak, hasil pasien asli
+      akan tertelan ke modul QC dan hilang dari pandangan (pernah kejadian).
+    </li>
+    <li>
+      <strong>Nama tes di OBR-2</strong>, bukan OBR-3 seperti Mindray. Parser sudah menangani.
+    </li>
+    <li>
+      <strong>Hasil numerik dilabeli <code>TX</code></strong> (teks), bukan <code>NM</code>.
+      Parser tetap membacanya selama nilainya benar-benar angka.
+    </li>
+    <li>
+      <strong>Satu analit dikirim 2–3 kali dalam satuan berbeda.</strong> HbA1c dikirim sebagai
+      <code>%</code>, <code>mmol/mol</code>, dan setara glukosa <code>mg/dL</code>. GeuLIS hanya
+      mengambil baris pertama (yang bernama); baris satuan alternatif diabaikan.
+    </li>
+    <li>
+      <strong>Hasil tidak valid</strong> (mis. nilai <code>Invalid-34</code>) tidak disimpan
+      sebagai hasil — itu perilaku yang benar, bukan bug. Ulangi tesnya di alat.
+    </li>
+  </ul>
+  <div class="alert">
+    <strong>Kiriman riwayat.</strong> Begitu koneksi dinyalakan, iChroma membuang seluruh hasil
+    lama yang masih tersimpan di memorinya ke GeuLIS. Semua akan mendarat di
+    <strong>Hasil Belum Cocok</strong> — harus ada yang membersihkan/mencocokkannya.
+  </div>
+
+  <h2 id="qc">8. Kontrol mutu</h2>
+  <p>
+    iChroma tidak menyediakan penanda protokol yang bisa dipercaya untuk membedakan QC dari
+    hasil pasien. Karena itu <strong>semua kiriman diperlakukan sebagai hasil pasien</strong>.
+    Jalankan kontrol dengan nama/ID yang jelas <em>bukan</em> nomor pasien — hasil kontrol akan
+    berhenti di <strong>Hasil Belum Cocok</strong> (aman: tidak nyantol ke pasien mana pun),
+    lalu petugas menandainya sebagai QC atau membuangnya.
+  </p>
+
+  <h2 id="masalah">9. Kalau hasil tidak masuk</h2>
+  <table>
+    <tr><th>Gejala</th><th>Periksa</th></tr>
+    <tr><td>Tidak ada apa pun di Log Alat</td><td>Ethernet Connection = ON? IP alat &amp; server benar &amp; satu subnet? Kabel LAN? <code>Ethernet Test</code> berhasil?</td></tr>
+    <tr><td>Alat menyambung lalu diam</td><td>Interface = <strong>NETWORK</strong> (bukan RS-232C)? Protocol = <strong>HL7</strong>? Port <code>6000</code>?</td></tr>
+    <tr><td>Hasil masuk tapi ke "Hasil Belum Cocok"</td><td>Sample ID yang diketik cocok dengan nomor RM / permintaan / order? Ejaan &amp; panjang persis?</td></tr>
+    <tr><td>Hasil masuk tapi <code>test_code</code> aneh</td><td>Kode kartrid belum dipetakan — lihat bagian 6.</td></tr>
+    <tr><td>Semua alat mati sekaligus</td><td>IP server GeuLIS berubah? Alat menyimpan <code>192.168.9.106</code> — kalau IP VM pindah, semua alat diam.</td></tr>
+  </table>
+  <p>
+    Log mentah tiap pesan masuk juga ditulis ke <code>/tmp/lis_debug.log</code> di server.
+  </p>
+
+  <hr>
+  <p class="footer">
+    Dokumen ini bagian dari GeuLIS. Perbarui bila setelan alat, IP, atau pemetaan berubah.
+  </p>
+</div>
+
+</body>
+</html>
