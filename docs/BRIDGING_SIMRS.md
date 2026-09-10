@@ -120,8 +120,35 @@ Header: `x-api-key: <API key>`
 }
 ```
 
-Balasan `201` berisi `data.request_no`. Balasan `409` berarti `simrs_order_id`
-sudah pernah dikirim.
+Balasan `201`:
+
+```json
+{
+  "message": "Order berhasil diterima",
+  "data": { "request_no": "REQ20260903123456", "simrs_order_id": "...", "patient_id": 30, "request_id": 29 },
+  "instructions": {
+    "sample_id": "PL202609030001",
+    "medical_record_no": "000123",
+    "catatan": "Ketik/scan Sample ID = nomor order ini di alat lab. Kotak Patient ID iChroma II maksimal 15 karakter ...",
+    "patient": { "name": "BUDI SANTOSO", "medical_record_no": "000123" },
+    "instruments": [
+      { "code": "EDAN-I15-01", "name": "EDAN i15 Blood Gas", "tests": ["pH", "Natrium (Na+)", "Kalium (K+)"] }
+    ],
+    "tests_tanpa_alat": []
+  }
+}
+```
+
+Balasan `409` berarti `simrs_order_id` sudah pernah dikirim.
+
+**`instructions`** dipakai SIMRS untuk menampilkan notifikasi setelah petugas
+menekan "Kirim ke GeuLIS": alat lab **tidak bisa** menarik order dari LIS,
+jadi petugas harus mengetik/scan **`sample_id`** (nomor order) secara manual
+di alat. `instruments` memberi tahu alat mana dan tes apa; `tests_tanpa_alat`
+adalah tes yang `id_template`-nya termapping ke kode LIS tetapi kode itu
+belum dikaitkan ke alat mana pun di menu Alat Laboratorium. SIMRS tidak perlu
+tahu pemetaan alat sendiri — kalau pemetaan di GeuLIS berubah, isi
+`instructions` ikut berubah.
 
 ### GET `/api/bridging/result/{simrs_order_id}`
 
