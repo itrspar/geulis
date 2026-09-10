@@ -2,17 +2,12 @@ import { Router } from 'express';
 import pool from '../config/db.js';
 import { requireApiKey } from '../middleware/auth.js';
 import { audit } from '../services/audit.js';
+import { genRequestNo } from '../services/requestNo.js';
 
 const router = Router();
 
 // Middleware auth untuk semua endpoint di router ini
 router.use(requireApiKey);
-
-function genRequestNo() {
-  const d = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
-  return `REQ${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${Date.now().toString().slice(-6)}`;
-}
 
 // POST /bridging/order
 router.post('/order', async (req, res) => {

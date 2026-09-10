@@ -715,6 +715,29 @@ export async function ensureSchema() {
   await pool.query(
     "INSERT IGNORE INTO permissions (code, name, menu_key) VALUES ('bankdarah.view','Bank Darah','bank-darah'),('mikro.view','Mikrobiologi','mikrobiologi')"
   ).catch(() => {});
+
+  // --- Charset kolom pesan mentah alat ---
+  //
+  // Kolom raw_message/raw_data lahir sebagai latin1. Analyzer gas darah
+  // (mis. EDAN i15) mengirim HL7 berisi '↑' '↓' pada flag dan '℃' pada
+  // satuan suhu — di luar latin1, sehingga INSERT hasil pasien ditolak
+  // ("Incorrect string value") dan hasilnya hilang. Konversi ke utf8mb4.
+  for (const [table, column, type] of [
+    ['lab_results', 'raw_message', 'TEXT'],
+    ['instrument_logs', 'raw_data', 'MEDIUMTEXT'],
+  ]) {
+    const [rows] = await pool.query(
+      `SELECT CHARACTER_SET_NAME FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+      [table, column]
+    );
+    if (rows[0] && rows[0].CHARACTER_SET_NAME !== 'utf8mb4') {
+      await pool
+        .query(`ALTER TABLE ${table} MODIFY ${column} ${type} CHARACTER SET utf8mb4`)
+        .then(() => console.log(`[schema] ${table}.${column} -> utf8mb4`))
+        .catch((e) => console.warn(`[schema] ${table}.${column} charset:`, e.message));
+    }
+  }
 }
 
 /** Tambah kolom hanya jika belum ada (idempoten) */

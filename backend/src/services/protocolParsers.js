@@ -122,11 +122,29 @@ export function parseHl7(raw) {
   // Data QC juga ditransmisikan lewat jalur yang sama. Tanpa dikenali, hasil
   // kontrol akan tersimpan sebagai hasil pasien. Penanda: MSH-11 bukan 'P',
   // atau OBR-4 berkode 00003 (LJ QCR). Lihat manual D.7.4 dan D.7.5.
+  //
+  // Penanda MSH-11 itu KHUSUS Mindray (ORU^R01) — terbukti salah untuk iChroma
+  // II (Boditech): alat ini selalu mengirim MSH-11='T' untuk OUL^R24, baik
+  // untuk hasil pasien SUNGGUHAN maupun kontrol, jadi kalau dipakai mentah-
+  // mentah hasil pasien asli ikut tertelan ke qc_results dan tidak pernah
+  // sampai ke lab_results/unmatched_results — pernah kejadian sungguhan
+  // (lihat instrument_logs: "kontrol HbA1c" yang isinya nama pasien seperti
+  // "hamzah", "sulastri"). Karena tidak ada penanda protokol yang bisa
+  // dipercaya untuk membedakan QC vs pasien pada OUL^R24, default-nya
+  // dianggap hasil pasien (aman: kalau memang kontrol, ID-nya tidak akan
+  // cocok pasien mana pun dan berhenti di unmatched_results untuk dicek
+  // orang — bukan menghilang diam-diam).
+  //
+  // OBR-2 pada OUL^R24 juga berisi NAMA TES ("HbA1c"/"T4"), bukan nomor
+  // sampel seperti OBR-2/3 pada Mindray — kalau tetap dipakai menimpa
+  // sampleId dari PID-2, ID pasien asli (mis. "hamzah") keliru berubah jadi
+  // kode tes ("HbA1c") saat dicocokkan ke pasien.
   let isQc = false;
   let isOrderQuery = false;
   let orderBarcode = null;
   let controlId = '1';
   let processingId = 'P';
+  let msgType = '';
 
   for (const line of lines) {
     const parts = line.split('|');
@@ -134,9 +152,14 @@ export function parseHl7(raw) {
     if (seg === 'MSH') {
       controlId = (parts[9] || '').trim() || controlId;
       processingId = (parts[10] || '').trim().toUpperCase() || processingId;
-      if (processingId && processingId !== 'P') isQc = true;
+      msgType = (parts[8] || '').trim().toUpperCase();
+      if (!msgType.startsWith('OUL') && processingId && processingId !== 'P') isQc = true;
+      // EDAN i15 (ORU^R01): MSH-11 selalu 'P', pembedanya di MSH-16
+      // (Application Ack Type): 0 = hasil pasien, 1 = kontrol, 2 = verifikasi
+      // kalibrasi. Mindray tidak mengisi field ini, jadi aman dicek eksplisit.
+      if (msgType.startsWith('ORU') && ['1', '2'].includes((parts[15] || '').trim())) isQc = true;
       // ORM^O01 = alat meminta worklist, bukan mengirim hasil
-      if ((parts[8] || '').trim().toUpperCase().startsWith('ORM')) isOrderQuery = true;
+      if (msgType.startsWith('ORM')) isOrderQuery = true;
     }
     // ORC-1 'RF' = re-fill order request; nomor sampel ada di ORC-3
     if (seg === 'ORC' && (parts[1] || '').trim().toUpperCase() === 'RF') {
@@ -152,16 +175,43 @@ export function parseHl7(raw) {
       }
       if (parts[8]) patientInfo.gender = (parts[8].toUpperCase() === 'F') ? 'P' : 'L';
     }
-    if (seg === 'OBR') {
+    if (seg === 'OBR' && !msgType.startsWith('OUL')) {
       sampleId = parts[2] || parts[3] || sampleId;
     }
     if (seg === 'OBX' && parts[3]) {
       // OBX-2 = tipe nilai. Alat seperti Mindray BC-3600 mengirim segmen non-hasil
       // (Take Mode, Blood Mode, dsb) bertipe IS/TX/FT — jangan diperlakukan sebagai
       // tes. ED = encapsulated data (histogram base64/bitmap), jangan pernah
-      // disimpan sebagai nilai hasil.
+      // disimpan sebagai nilai hasil sama sekali, walau kebetulan berupa angka.
+      //
+      // iChroma II (Boditech) melabeli hasil numeriknya sendiri sebagai TX, bukan
+      // NM — kalau IS/TX/FT dibuang tanpa syarat, seluruh hasilnya ikut terbuang
+      // (lihat instrument_logs: "0 parameter" untuk tiap kontrol yang dikirim).
+      // Jadi IS/TX/FT tetap diterima SELAMA nilainya (OBX-5) benar-benar angka;
+      // yang dibuang hanya field bertipe itu yang isinya sungguh teks, seperti
+      // "Whole Blood" atau "sampel lipemik" pada BC-3600.
       const valueType = (parts[2] || '').trim().toUpperCase();
-      if (['IS', 'TX', 'FT', 'ED'].includes(valueType)) continue;
+      if (valueType === 'ED') continue;
+      const nilaiAngka = parts[5] !== undefined && parts[5] !== '' && Number.isFinite(Number(parts[5]));
+      if (['IS', 'TX', 'FT'].includes(valueType) && !nilaiAngka) continue;
+
+      // EDAN i15: OBX-3 BUKAN kode tes, melainkan satu angka tipe —
+      // 0 = parameter terukur, 1 = parameter hitungan, 2 = info pasien.
+      // Nama parameter sungguhan ("pH", "Na+", "HCO3-act", dst) ada di OBX-4.
+      // Baris tipe 2 (Temperature, FIO2) info pasien, bukan hasil pemeriksaan.
+      // Mindray/iChroma tidak pernah menaruh angka telanjang di OBX-3, jadi
+      // pola /^[012]$/ aman sebagai penanda khas EDAN.
+      if (/^[012]$/.test((parts[3] || '').trim())) {
+        if ((parts[3] || '').trim() === '2') continue;
+        const kodeEdan = (parts[4] || '').trim();
+        const nilaiEdan = parts[5];
+        const satuanEdan = (parts[6] || '').split('^')[0] || undefined;
+        if (kodeEdan && nilaiEdan !== undefined && nilaiEdan !== '') {
+          results.push({ test_code: kodeEdan, value: nilaiEdan, unit: satuanEdan });
+        }
+        continue;
+      }
+
       if (!isResultCode(parts[3])) continue;
 
       // OBX-3 sering berbentuk <kode>^<nama>^<sistem>, mis. 6690-2^WBC^LN.

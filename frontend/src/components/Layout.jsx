@@ -20,6 +20,7 @@ const MENU = [
   { key: 'requests', path: '/requests', label: 'Permintaan Lab', icon: '🧪' },
   { key: 'results', path: '/results', label: 'Hasil Lab', icon: '📋' },
   { key: 'users', path: '/users', label: 'User & Hak Akses', icon: '🔐' },
+  { key: 'mapping', path: '/mapping', label: 'Mapping SIMRS', icon: '🔗' },
   { key: 'instruments', path: '/instruments', label: 'Alat Laboratorium', icon: '⚙️' },
   { key: 'results', path: '/unmatched', label: 'Hasil Belum Cocok', icon: '📥' },
   { key: 'instruments', path: '/nilai-rujukan', label: 'Nilai Rujukan', icon: '📐' },

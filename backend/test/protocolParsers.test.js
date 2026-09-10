@@ -177,6 +177,41 @@ test('HL7: data QC dipisahkan ke qcResults, tidak masuk hasil pasien', () => {
   assert.equal(out.qcResults[0].test_code, 'WBC');
 });
 
+test('HL7: EDAN i15 — nama parameter di OBX-4, OBX-3 hanya angka tipe', () => {
+  // Direkam dari EDAN i15 sungguhan (blood gas analyzer) lewat Network Setup >
+  // Protocol HL7v2.4, Server IP = LIS, port 8000. OBX-3 = 0/1/2 (terukur/
+  // hitungan/info pasien), nama sebenarnya di OBX-4. Baris tipe 2 (Temperature,
+  // FIO2) info pasien, bukan hasil.
+  const raw =
+    'MSH|^~\\&|EDAN|i15^M22311590014|LIS||20260910102610||ORU^R01||P|2.4||||0||UNICODE UTF-8||||\r' +
+    'PID|||wagiman|||||U\r' +
+    'OBR|||20260821002|EDAN^i15|||20260821213728||||||||Arterial|admin\r' +
+    'OBX|0|ST|0|Na+|141|mmol/L|138^146||||||Pass|20260821213728||admin\r' +
+    'OBX|1|ST|0|K+|5.0|mmol/L|3.5^4.9|↑|||||Pass|20260821213728||admin\r' +
+    'OBX|5|ST|1|tHb(est)|15.5|g/dL|2.9^27.7|||||||20260821213728||admin\r' +
+    'OBX|7|ST|2|Temperature|37.0|℃||||||||20260821213728||admin\r' +
+    'OBX|8|ST|2|FIO2|21|%||||||||20260821213728||admin\r';
+  const out = parseHl7(raw);
+  assert.equal(out.isQc, false, 'MSH-16=0 berarti hasil pasien');
+  assert.equal(out.sampleId, '20260821002', 'sampleId dari OBR-3, bukan nama di PID-3');
+  const kode = out.results.map((r) => r.test_code);
+  assert.deepEqual(kode, ['Na+', 'K+', 'tHb(est)'], 'terukur + hitungan ikut; info pasien (tipe 2) dilewati');
+  assert.equal(out.results[0].value, '141');
+  assert.equal(out.results[0].unit, 'mmol/L');
+});
+
+test('HL7: EDAN i15 — MSH-16=1 menandai kontrol, bukan hasil pasien', () => {
+  const raw =
+    'MSH|^~\\&|EDAN|i15^M22311590014|LIS||20260910102610||ORU^R01||P|2.4||||1||UNICODE UTF-8||||\r' +
+    'OBR||1|Control|EDAN^i15|||20260910102610||||||BGQc||||||CommonQC\r' +
+    'OBX|0|ST|0|pH|7.400||7.350^7.450|N|||||In Control|20260910102610||admin\r';
+  const out = parseHl7(raw);
+  assert.equal(out.isQc, true);
+  assert.equal(out.results.length, 0);
+  assert.equal(out.qcResults.length, 1);
+  assert.equal(out.qcResults[0].test_code, 'pH');
+});
+
 test('HL7: ACK yang dibentuk memakai MLLP dan mengembalikan control ID', () => {
   const ack = buildHl7Ack('42', 'P', 'AA');
   assert.ok(ack.startsWith(VT), 'MLLP harus diawali 0x0B');
@@ -220,6 +255,60 @@ test('OBX bertipe teks diabaikan, hanya angka yang jadi hasil', () => {
   const out = parseHl7(raw);
   const kode = out.results.map((r) => r.test_code);
   assert.deepEqual(kode, ['WBC'], 'IS/TX bukan hasil terukur');
+});
+
+test('HL7: OBX bertipe TX tetap dibaca kalau isinya angka (iChroma II)', () => {
+  // Direkam dari alat iChroma II (Boditech) sungguhan lewat PC Connection >
+  // NETWORK > LIS Server Setting, protokol HL7. Beda dengan BC-3600, alat ini
+  // melabeli hasil numeriknya sendiri sebagai TX, bukan NM. Baris kedua dan
+  // ketiga adalah nilai yang sama dalam satuan lain (OBX-3 kosong) dan sengaja
+  // tidak ikut jadi hasil terpisah.
+  const raw =
+    'MSH|^~\\&|1|ichroma2|UH162||20260323144311||OUL^R24^OUL_R24|1|T|2.6\r' +
+    'PID||seri||||||-\r' +
+    'OBR||HbA1c|0|0|||20260323144311|||-\r' +
+    'ORC|OK|||||||||||||||||UH162|1\r' +
+    'SPM|1|AAVAS01EX|||||||||||||||||20260920\r' +
+    'OBX|1|TX|HbA1c||9.60|%||0|||R\r' +
+    'OBX|2|TX|||81.38|mmol/mol||0|||R\r' +
+    'OBX|3|TX|||228.70|mg/dL||0|||R\r';
+  const out = parseHl7(raw);
+  assert.equal(out.isQc, false, 'hasil pasien sungguhan, bukan kontrol');
+  assert.equal(out.results.length, 1, 'hanya OBX dengan OBX-3 terisi yang dihitung');
+  assert.equal(out.results[0].test_code, 'HbA1c');
+  assert.equal(out.results[0].value, '9.60');
+  assert.equal(out.results[0].unit, '%');
+});
+
+test('HL7: OUL^R24 (iChroma II) tidak dianggap QC hanya karena MSH-11 bukan P', () => {
+  // Insiden nyata: iChroma II SELALU mengirim MSH-11='T' untuk OUL^R24, baik
+  // untuk hasil pasien maupun kontrol — aturan Mindray (MSH-11 != 'P' berarti
+  // QC) salah kalau dipakai di sini dan sempat membuat hasil pasien asli
+  // ("hamzah", "sulastri", dst di PID-2) tertelan ke qc_results tanpa pernah
+  // dicocokkan ke pasien.
+  const raw =
+    'MSH|^~\\&|1|ichroma2|UH162||20260324071104||OUL^R24^OUL_R24|1|T|2.6\r' +
+    'PID||hamzah||||||-\r' +
+    'OBR||HbA1c|0|0|||20260324071104|||-\r' +
+    'OBX|1|TX|HbA1c||5.10|%||0|||R\r';
+  const out = parseHl7(raw);
+  assert.equal(out.isQc, false);
+  assert.equal(out.results.length, 1);
+  assert.equal(out.qcResults.length, 0);
+});
+
+test('HL7: OBR-2 pada OUL^R24 (nama tes) tidak menimpa sampleId dari PID-2', () => {
+  // OBR-2 di iChroma II berisi nama tes ("HbA1c"), bukan nomor sampel seperti
+  // pada Mindray. Kalau sampleId ikut ditimpa OBR-2, ID pasien yang diketik
+  // operator di PID-2 hilang diganti nama tes, dan pencocokan ke pasien pasti
+  // gagal.
+  const raw =
+    'MSH|^~\\&|1|ichroma2|UH162||20260324071104||OUL^R24^OUL_R24|1|T|2.6\r' +
+    'PID||hamzah||||||-\r' +
+    'OBR||HbA1c|0|0|||20260324071104|||-\r' +
+    'OBX|1|TX|HbA1c||5.10|%||0|||R\r';
+  const out = parseHl7(raw);
+  assert.equal(out.sampleId, 'hamzah');
 });
 
 test('ASTM: nomor spesimen dan nomor pasien dikembalikan terpisah', () => {

@@ -2,14 +2,9 @@ import { Router } from 'express';
 import pool from '../config/db.js';
 import { authenticate, requirePermission } from '../middleware/auth.js';
 import { audit } from '../services/audit.js';
+import { genRequestNo } from '../services/requestNo.js';
 
 const router = Router();
-
-function genRequestNo() {
-  const d = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
-  return `REQ${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${Date.now().toString().slice(-6)}`;
-}
 
 router.get('/', authenticate, requirePermission('requests.view'), async (req, res) => {
   const status = req.query.status;
