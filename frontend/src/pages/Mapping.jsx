@@ -12,14 +12,31 @@ export default function Mapping() {
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ mapping_type: 'test', lis_field: '', simrs_field: '', transform_rule: '', notes: '', is_active: true });
 
+  const [userMaps, setUserMaps] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [userForm, setUserForm] = useState({ simrs_user_id: '', geulis_user_id: '', notes: '' });
+
   const load = () => {
     api.mapping.get().then((d) => {
       setMappings(d.mappings.filter(m => m.mapping_type === 'test'));
     });
     api.tests.list().then(setTests);
+    api.mapping.users.get().then(setUserMaps);
+    api.users.list().then(setUsers);
   };
 
   useEffect(() => { load(); }, []);
+
+  const submitUserMap = async (e) => {
+    e.preventDefault();
+    try {
+      await api.mapping.users.create(userForm);
+      setUserForm({ simrs_user_id: '', geulis_user_id: '', notes: '' });
+      load();
+    } catch (err) {
+      Swal.fire({ icon: 'error', title: 'Gagal menyimpan', text: err.message });
+    }
+  };
 
   const submitMapping = async (e) => {
     e.preventDefault();
@@ -113,6 +130,60 @@ export default function Mapping() {
                 </tr>
               );
             })}
+          </tbody>
+        </table>
+      </div>
+
+      <h2 style={{ margin: '2rem 0 0.5rem' }}>Pemetaan User SIMRS ↔ GeuLIS</h2>
+      <p style={{ color: 'var(--muted)', marginBottom: '1.25rem' }}>
+        Supaya verifikasi hasil yang dipicu dari SIMRS (fitur "verifikasi tanpa buka LIS")
+        tercatat atas nama petugas yang sebenarnya — bukan akun API generik. Petugas lab
+        yang perlu verifikasi dari SIMRS harus dipetakan di sini terlebih dahulu.
+      </p>
+
+      {can('mapping.manage') && (
+        <form className="card" onSubmit={submitUserMap} style={{ marginBottom: '1.25rem' }}>
+          <div className="form-grid">
+            <div className="form-group">
+              <label>ID User di SIMRS</label>
+              <input required value={userForm.simrs_user_id} onChange={(e) => setUserForm({ ...userForm, simrs_user_id: e.target.value })} placeholder="Contoh: NIP atau user_id Khanza" />
+            </div>
+            <div className="form-group">
+              <label>Akun GeuLIS</label>
+              <select required value={userForm.geulis_user_id} onChange={(e) => setUserForm({ ...userForm, geulis_user_id: e.target.value })}>
+                <option value="">-- Pilih Akun GeuLIS --</option>
+                {users.map(u => (
+                  <option key={u.id} value={u.id}>{u.username} — {u.full_name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group"><label>Catatan (opsional)</label><input value={userForm.notes} onChange={(e) => setUserForm({ ...userForm, notes: e.target.value })} /></div>
+          </div>
+          <button type="submit" style={{ marginTop: '1rem' }}>Tambah Pemetaan</button>
+        </form>
+      )}
+
+      <div className="card">
+        <table>
+          <thead><tr><th>ID User SIMRS</th><th>Akun GeuLIS</th><th>Aktif</th><th>Catatan</th><th>Aksi</th></tr></thead>
+          <tbody>
+            {userMaps.map((m) => (
+              <tr key={m.id}>
+                <td><code>{m.simrs_user_id}</code></td>
+                <td>{m.username} — {m.full_name}</td>
+                <td>{m.is_active ? 'Ya' : 'Tidak'}</td>
+                <td>{m.notes || '—'}</td>
+                <td>
+                  <button className="danger btn-sm" type="button" onClick={async () => {
+                    const res = await Swal.fire({ title: 'Hapus pemetaan ini?', icon: 'warning', showCancelButton: true, confirmButtonText: 'Ya', cancelButtonText: 'Batal' });
+                    if (res.isConfirmed) {
+                      await api.mapping.users.remove(m.id);
+                      load();
+                    }
+                  }}>Hapus</button>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

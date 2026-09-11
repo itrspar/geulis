@@ -199,5 +199,10 @@ export const api = {
     saveConfig: (body) => request('/mapping/config/simrs', { method: 'PUT', body: JSON.stringify(body) }),
     pushResult: (id) => request(`/mapping/bridge/push-result/${id}`, { method: 'POST' }),
     pullOrders: () => request('/mapping/bridge/pull-orders', { method: 'POST' }),
+    users: {
+      get: () => request('/mapping/users'),
+      create: (body) => request('/mapping/users', { method: 'POST', body: JSON.stringify(body) }),
+      remove: (id) => request(`/mapping/users/${id}`, { method: 'DELETE' }),
+    },
   },
 };

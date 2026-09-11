@@ -33,6 +33,44 @@ router.delete('/:id', authenticate, requirePermission('mapping.manage'), async (
   res.json({ ok: true });
 });
 
+// Pemetaan user SIMRS -> user GeuLIS.
+//
+// Dipakai bridging.js (resolveSimrsUser) supaya verifikasi hasil yang dipicu
+// dari SIMRS tercatat atas nama petugas GeuLIS yang sebenarnya, bukan API key
+// generik -- lihat catatan di ensureSchema.js pada tabel simrs_user_map.
+router.get('/users', authenticate, requirePermission('mapping.view'), async (req, res) => {
+  const [rows] = await pool.query(
+    `SELECT m.id, m.simrs_user_id, m.notes, m.created_at,
+            u.id AS geulis_user_id, u.username, u.full_name, u.is_active
+       FROM simrs_user_map m
+       JOIN users u ON u.id = m.geulis_user_id
+      ORDER BY u.full_name`
+  );
+  res.json(rows);
+});
+
+router.post('/users', authenticate, requirePermission('mapping.manage'), async (req, res) => {
+  const { simrs_user_id, geulis_user_id, notes } = req.body;
+  if (!simrs_user_id || !geulis_user_id) {
+    return res.status(400).json({ error: 'simrs_user_id dan geulis_user_id wajib diisi' });
+  }
+  try {
+    const [r] = await pool.query(
+      'INSERT INTO simrs_user_map (simrs_user_id, geulis_user_id, notes) VALUES (?, ?, ?)',
+      [String(simrs_user_id).trim(), geulis_user_id, notes || null]
+    );
+    res.status(201).json({ id: r.insertId });
+  } catch (e) {
+    if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'ID user SIMRS ini sudah dipetakan ke akun lain.' });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete('/users/:id', authenticate, requirePermission('mapping.manage'), async (req, res) => {
+  await pool.query('DELETE FROM simrs_user_map WHERE id = ?', [req.params.id]);
+  res.json({ ok: true });
+});
+
 router.put('/config/simrs', authenticate, requirePermission('mapping.manage'), async (req, res) => {
   const { base_url, api_key, auth_type, username, is_active } = req.body;
   const [existing] = await pool.query('SELECT id FROM simrs_config LIMIT 1');

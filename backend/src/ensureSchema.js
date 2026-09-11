@@ -716,6 +716,24 @@ export async function ensureSchema() {
     "INSERT IGNORE INTO permissions (code, name, menu_key) VALUES ('bankdarah.view','Bank Darah','bank-darah'),('mikro.view','Mikrobiologi','mikrobiologi')"
   ).catch(() => {});
 
+  // Pemetaan user SIMRS -> user GeuLIS.
+  //
+  // Dipakai bridging.js supaya verifikasi/pelaporan kritis yang dipicu dari
+  // SIMRS tetap tercatat atas nama petugas nyata (verified_by / critical_ack_by
+  // di lab_results), bukan atas nama API key generik. Tanpa ini, "verifikasi
+  // dari SIMRS" tidak bisa dipertanggungjawabkan ke satu orang -- setara
+  // dengan menghapus tanda tangan dari hasil lab.
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS simrs_user_map (
+       id INT PRIMARY KEY AUTO_INCREMENT,
+       simrs_user_id VARCHAR(100) NOT NULL UNIQUE,
+       geulis_user_id INT NOT NULL,
+       notes VARCHAR(255) NULL,
+       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+       FOREIGN KEY (geulis_user_id) REFERENCES users(id) ON DELETE CASCADE
+     )`
+  ).catch((e) => console.warn('[schema] simrs_user_map:', e.message));
+
   // --- Charset kolom pesan mentah alat ---
   //
   // Kolom raw_message/raw_data lahir sebagai latin1. Analyzer gas darah

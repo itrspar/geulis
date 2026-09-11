@@ -176,6 +176,65 @@ tahu pemetaan alat sendiri — kalau pemetaan di GeuLIS berubah, isi
 `status` per pemeriksaan: `pending` (belum ada hasil), `preliminary` (ada hasil,
 belum diverifikasi), `completed` (sudah diverifikasi).
 
+Field tambahan per hasil, dipakai untuk verifikasi (§6a): `result_id` (dipakai
+sebagai `:id` pada `POST /result/{id}/verify`), `needs_report_before_verify`
+(`true` bila hasil berpenanda kritis/abnormal/delta mencurigakan dan belum ada
+catatan pelaporan — SIMRS sebaiknya menampilkan input "dilaporkan ke siapa"
+sebelum memanggil endpoint verifikasi, bukan menunggu error 400).
+
+### POST `/api/bridging/result/{result_id}/verify`
+
+Verifikasi hasil langsung dari SIMRS — LIS berjalan sebagai layanan latar
+belakang, petugas tidak perlu membuka aplikasi LIS untuk kasus normal maupun
+kritis.
+
+**Prasyarat**: petugas yang memverifikasi harus sudah dipetakan ke akun
+GeuLIS di menu *Mapping SIMRS → Pemetaan User SIMRS ↔ GeuLIS* (butuh
+permission `mapping.manage`, dilakukan sekali oleh admin LIS per petugas).
+Tanpa pemetaan ini, panggilan ditolak `403` — verifikasi hasil lab harus bisa
+ditelusuri ke satu petugas berwenang, bukan ke akun API generik.
+
+Body:
+
+```json
+{
+  "simrs_user_id": "198501012010011001",
+  "reported_to": "dr. Andi (opsional, WAJIB untuk hasil kritis/abnormal)",
+  "reported_via": "Telepon",
+  "readback": true,
+  "note": "Pasien sudah rawat inap ruang ICU"
+}
+```
+
+- `simrs_user_id` — ID user SIMRS yang sedang login, dipetakan ke akun GeuLIS
+  lewat menu di atas. Wajib di setiap panggilan.
+- `reported_to`, `reported_via`, `readback`, `note` — catatan pelaporan nilai
+  kritis (PMK 43/2013): siapa yang dihubungi, lewat apa, apakah dibacakan
+  ulang. **Wajib diisi** (minimal `reported_to`) hanya jika hasil berpenanda
+  `critical`/`abnormal` atau `delta_flag='check'` DAN belum pernah dilaporkan
+  sebelumnya (`needs_report_before_verify: true` pada respons GET /result).
+  Untuk hasil normal, field ini boleh dikosongkan — verifikasi langsung
+  diproses.
+
+Sukses (`200`):
+
+```json
+{ "ok": true, "verified_by": "andi.analis", "push": { "total": 1, "pushed": 1, "details": [...] } }
+```
+
+Order otomatis ditutup (`status='completed'`) dan hasilnya didorong balik ke
+SIMRS (lihat §5) begitu SELURUH item order tersebut sudah final — bukan per
+hasil, supaya SIMRS tidak menerima laporan sebagian.
+
+Error yang mungkin muncul:
+
+| Status | Kapan | Tindakan SIMRS |
+|---|---|---|
+| `400` `requires_report: true` | Hasil kritis/abnormal, `reported_to` belum diisi | Tampilkan form pelaporan, kirim ulang dengan `reported_to` terisi |
+| `403` | `simrs_user_id` belum dipetakan / akun GeuLIS nonaktif | Minta admin LIS memetakan akun via menu Mapping SIMRS |
+| `404` | `result_id` tidak ditemukan | — |
+| `409` | Hasil sudah `final`/`corrected`, tidak bisa diverifikasi ulang lewat jalur ini | Sembunyikan tombol verifikasi untuk hasil yang statusnya sudah `completed` |
+
 ### GET `/api/bridging/test-catalog`
 
 SIMRS menariknya untuk rekonsiliasi — tahu tes apa yang sudah ada di LIS, mana

@@ -1,13 +1,50 @@
 import { Router } from 'express';
 import pool from '../config/db.js';
-import { requireApiKey } from '../middleware/auth.js';
+import { requireApiKey, requirePermission } from '../middleware/auth.js';
 import { audit } from '../services/audit.js';
 import { genRequestNo } from '../services/requestNo.js';
+import { pushRequestResultsToSimrs } from '../services/simrsPush.js';
 
 const router = Router();
 
 // Middleware auth untuk semua endpoint di router ini
 router.use(requireApiKey);
+
+/**
+ * Menerjemahkan user SIMRS yang sedang login menjadi akun GeuLIS, lalu meniru
+ * bentuk req.user dari authenticate() (lihat middleware/auth.js) supaya
+ * requirePermission() bisa dipakai ulang tanpa modifikasi.
+ *
+ * Tanpa ini, aksi yang dipicu SIMRS hanya bisa tercatat atas nama API key
+ * generik -- cukup untuk membuat order, tapi tidak untuk verifikasi hasil:
+ * itu tindakan yang harus bisa ditelusuri ke satu petugas berwenang tertentu
+ * (lihat simrs_user_map di ensureSchema.js).
+ */
+async function resolveSimrsUser(req, res, next) {
+  const simrsUserId = req.body?.simrs_user_id;
+  if (!simrsUserId) {
+    return res.status(400).json({ error: 'simrs_user_id wajib disertakan (identitas petugas yang sedang login di SIMRS).' });
+  }
+  const [rows] = await pool.query(
+    `SELECT u.id, u.username, u.is_active, u.role_id, r.code AS role_code
+       FROM simrs_user_map m
+       JOIN users u ON u.id = m.geulis_user_id
+       JOIN roles r ON r.id = u.role_id
+      WHERE m.simrs_user_id = ?`,
+    [String(simrsUserId).trim()]
+  );
+  if (rows.length === 0) {
+    return res.status(403).json({
+      error: 'User SIMRS ini belum dipetakan ke akun GeuLIS. Minta admin LIS memetakan akun Anda di menu Mapping SIMRS.',
+    });
+  }
+  const u = rows[0];
+  if (!u.is_active) {
+    return res.status(403).json({ error: 'Akun GeuLIS yang terpetakan untuk user ini nonaktif.' });
+  }
+  req.user = { id: u.id, username: u.username, roleId: u.role_id, roleCode: u.role_code };
+  next();
+}
 
 // POST /bridging/order
 router.post('/order', async (req, res) => {
@@ -205,7 +242,7 @@ router.get('/result/:simrs_order_id', async (req, res) => {
                   WHERE sm.lis_field = lt.code AND sm.mapping_type = 'test'
                   ORDER BY sm.is_active DESC, sm.id ASC LIMIT 1)) as code_simrs,
              res.id AS result_id, res.result_value, res.unit, res.flag, res.status,
-             res.verified_at, res.result_at
+             res.delta_flag, res.critical_ack, res.verified_at, res.result_at
       FROM lab_request_items lri
       JOIN lab_tests lt ON lt.id = lri.test_id
       LEFT JOIN lab_results res ON res.id = (
@@ -223,7 +260,13 @@ router.get('/result/:simrs_order_id', async (req, res) => {
     const formattedResults = resultRows.map(r => {
       const hasValue = r.result_value != null && r.result_value !== '';
       const verified = r.status === 'final' || r.status === 'corrected';
+      // Kritis/abnormal/delta mencurigakan yang belum dilaporkan (critical_ack)
+      // wajib disertai "siapa yang dihubungi" sebelum bisa diverifikasi lewat
+      // POST /result/:id/verify -- SIMRS bisa pakai flag ini untuk menampilkan
+      // input pelaporan itu di muka, bukan menunggu 400 dari server dulu.
+      const perluLaporan = ['critical', 'abnormal'].includes(r.flag) || r.delta_flag === 'check';
       return {
+        result_id: r.result_id || null,
         test_code: r.test_code,
         code_simrs: r.code_simrs || null,
         test_name: r.test_name,
@@ -234,6 +277,7 @@ router.get('/result/:simrs_order_id', async (req, res) => {
         result_time: r.result_at,
         // completed hanya bila sudah diverifikasi; jika ada nilai tapi belum verifikasi => preliminary
         status: hasValue ? (verified ? 'completed' : 'preliminary') : 'pending',
+        needs_report_before_verify: !verified && hasValue && perluLaporan && !r.critical_ack,
       };
     });
 
@@ -252,6 +296,88 @@ router.get('/result/:simrs_order_id', async (req, res) => {
 
   } catch (err) {
     res.status(500).json({ error: 'Gagal mengambil hasil', details: err.message });
+  }
+});
+
+/**
+ * POST /bridging/result/:id/verify
+ *
+ * Verifikasi hasil langsung dari SIMRS -- LIS berjalan sebagai layanan latar
+ * belakang, petugas tidak perlu pindah ke aplikasi LIS untuk kasus normal
+ * maupun kritis. `:id` adalah result_id yang dikembalikan GET /result di atas.
+ *
+ * Body: { simrs_user_id (wajib, lihat resolveSimrsUser),
+ *         reported_to, reported_via, readback, note (wajib HANYA bila hasil
+ *         berpenanda kritis/abnormal/delta dan belum pernah dilaporkan) }
+ *
+ * Hasil kritis/abnormal TIDAK ditolak paksa ke LIS (sesuai keputusan: SIMRS
+ * jadi antarmuka utama) -- tapi catatan pelaporan (siapa yang dihubungi, lewat
+ * apa, dibacakan ulang atau tidak) tetap wajib diisi dalam panggilan yang
+ * sama, supaya syarat akreditasi (PMK 43/2013) tidak ikut terlewati hanya
+ * karena jalurnya lebih cepat.
+ */
+router.post('/result/:id/verify', resolveSimrsUser, requirePermission('results.manage'), async (req, res) => {
+  const { reported_to, reported_via, readback, note } = req.body || {};
+  try {
+    const [rows] = await pool.query(
+      'SELECT id, status, flag, delta_flag, critical_ack, request_id FROM lab_results WHERE id = ?',
+      [req.params.id]
+    );
+    const hasil = rows[0];
+    if (!hasil) return res.status(404).json({ error: 'Hasil tidak ditemukan.' });
+    if (hasil.status !== 'preliminary') {
+      return res.status(409).json({ error: `Hasil berstatus '${hasil.status}', tidak bisa diverifikasi lewat jalur ini.` });
+    }
+
+    const perluLaporan = ['critical', 'abnormal'].includes(hasil.flag) || hasil.delta_flag === 'check';
+    if (perluLaporan && !hasil.critical_ack) {
+      if (!reported_to || !String(reported_to).trim()) {
+        return res.status(400).json({
+          error: 'Hasil ini bertanda kritis/abnormal/delta mencurigakan. Sertakan reported_to (nama yang dihubungi) untuk melanjutkan.',
+          requires_report: true,
+          flag: hasil.flag,
+          delta_flag: hasil.delta_flag,
+        });
+      }
+      await pool.query(
+        `UPDATE lab_results
+            SET critical_ack = 1, critical_ack_by = ?, critical_ack_at = NOW(),
+                critical_reported_to = ?, critical_reported_via = ?, critical_readback = ?, critical_note = ?
+          WHERE id = ?`,
+        [req.user.id, String(reported_to).trim(), reported_via || null, readback ? 1 : 0, note || null, req.params.id]
+      );
+      await audit(req, 'ACK', 'result', req.params.id, { reported_to, reported_via, readback: !!readback, source: 'bridging' });
+    }
+
+    await pool.query(
+      "UPDATE lab_results SET status='final', verified_by=?, verified_at=NOW() WHERE id=?",
+      [req.user.id, req.params.id]
+    );
+    await audit(req, 'VERIFY', 'result', req.params.id, { source: 'bridging' });
+
+    // Order ditutup dan didorong balik ke SIMRS hanya setelah SELURUH item
+    // permintaan itu final -- bukan per-hasil, supaya SIMRS tidak menerima
+    // laporan sebagian dan mengira pemeriksaan sudah tuntas.
+    const [[sisa]] = await pool.query(
+      "SELECT COUNT(*) AS n FROM lab_results WHERE request_id = ? AND status = 'preliminary'",
+      [hasil.request_id]
+    );
+    let push = null;
+    if (sisa.n === 0) {
+      await pool.query(
+        "UPDATE lab_requests SET status='completed', completed_at=NOW() WHERE id=?",
+        [hasil.request_id]
+      ).catch(() => {});
+      try {
+        push = await pushRequestResultsToSimrs(hasil.request_id);
+      } catch (e) {
+        push = { error: e.message };
+      }
+    }
+
+    res.json({ ok: true, verified_by: req.user.username, push });
+  } catch (err) {
+    res.status(500).json({ error: 'Gagal memverifikasi hasil', details: err.message });
   }
 });
 
