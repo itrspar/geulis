@@ -12,7 +12,9 @@ import { api } from '../api';
 // Anda -- bukan kode proyek asal. Membiarkannya menunjuk ke sini berarti
 // menawarkan kode yang bukan kode yang sedang mereka pakai.
 const APP_VERSION = __APP_VERSION__;
-const SOURCE_URL = 'https://github.com/doktertekno/geulis';
+// Fork RS Pariaman. AGPL-3.0 Pasal 13: tautan ini WAJIB menunjuk ke kode yang
+// benar-benar dijalankan di sini (cabang deployment rumah sakit), bukan hulu.
+const SOURCE_URL = 'https://github.com/itrspar/geulis';
 
 const MENU = [
   { key: 'dashboard', path: '/', label: 'Dashboard', icon: '📊' },
