@@ -57,3 +57,67 @@ export async function pushRequestResultsToSimrs(requestId) {
   for (const r of rows) out.push(await pushResultToSimrs(r.id));
   return { total: rows.length, pushed: out.filter((x) => x.ok).length, details: out };
 }
+
+/**
+ * Notifikasi SEGERA ke SIMRS begitu ada nilai kritis baru dari alat --
+ * sebelum diverifikasi siapa pun. Ini beda tujuan dari pushResultToSimrs
+ * (yang mengirim hasil FINAL setelah diverifikasi): nilai kritis tidak boleh
+ * menunggu seseorang kebetulan membuka layar LIS, atau menunggu SIMRS
+ * kebetulan memoling GET /result duluan. Tanpa ini, hasil kritis yang muncul
+ * di luar jam ada orang menatap layar bisa tidak diketahui berjam-jam.
+ *
+ * Endpoint tujuan: `${base_url}/notifikasi-kritis` (lihat docs/BRIDGING_SIMRS.md
+ * §6a) -- perlu diimplementasikan di sisi SIMRS. Best-effort, tidak pernah
+ * melempar: gagal kirim notifikasi TIDAK BOLEH menggagalkan penyimpanan hasil
+ * dari alat.
+ */
+export async function notifikasiKritisKeSimrs(resultId) {
+  try {
+    const [rows] = await pool.query(
+      `SELECT res.result_value, res.unit, res.flag, res.result_at,
+              lt.code AS test_code, lt.name AS test_name,
+              p.medical_record_no, p.name AS patient_name,
+              lr.simrs_order_id
+         FROM lab_results res
+         JOIN lab_tests lt ON lt.id = res.test_id
+         JOIN patients p ON p.id = res.patient_id
+         LEFT JOIN lab_requests lr ON lr.id = res.request_id
+        WHERE res.id = ?`,
+      [resultId]
+    );
+    const r = rows[0];
+    if (!r) return { ok: false, error: 'Hasil tidak ditemukan' };
+
+    const [cfgRows] = await pool.query('SELECT * FROM simrs_config WHERE is_active=1 LIMIT 1');
+    const cfg = cfgRows[0];
+    if (!cfg) return { ok: false, skipped: true, reason: 'Konfigurasi SIMRS tidak aktif' };
+
+    const [testMappings] = await pool.query(
+      "SELECT lis_field, simrs_field FROM simrs_mappings WHERE mapping_type='test' AND is_active=1"
+    );
+    const testMapDict = {};
+    testMappings.forEach((m) => { testMapDict[m.lis_field] = m.simrs_field; });
+
+    const payload = {
+      no_rm: r.medical_record_no,
+      nama_pasien: r.patient_name,
+      no_order: r.simrs_order_id,
+      kode_pemeriksaan: testMapDict[r.test_code] || r.test_code,
+      nama_pemeriksaan: r.test_name,
+      nilai_hasil: r.result_value,
+      satuan: r.unit,
+      flag: r.flag,
+      waktu_hasil: r.result_at,
+    };
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (cfg.auth_type === 'bearer' && cfg.api_key) headers.Authorization = `Bearer ${cfg.api_key}`;
+    if (cfg.auth_type === 'api_key' && cfg.api_key) headers['x-api-key'] = cfg.api_key;
+    const url = `${cfg.base_url.replace(/\/$/, '')}/notifikasi-kritis`;
+    const resp = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload) });
+    const text = await resp.text().catch(() => '');
+    return { ok: resp.ok, status: resp.status, response: text.slice(0, 500) };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}

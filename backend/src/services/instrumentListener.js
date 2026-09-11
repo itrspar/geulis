@@ -5,6 +5,7 @@ import { nilaiHasil } from './flags.js';
 import { konteksPasien } from './konteksPasien.js';
 import { simpanHasilQc } from './qc.js';
 import { hitungDelta } from './deltaCheck.js';
+import { notifikasiKritisKeSimrs } from './simrsPush.js';
 
 /**
  * Apakah pasien boleh didaftarkan otomatis dari nomor sampel yang tidak dikenal.
@@ -204,7 +205,7 @@ async function saveInstrumentResults(instrumentId, protocol, sampleId, results, 
     // Dihitung sebelum baris baru masuk, supaya pembandingnya benar-benar hasil
     // sebelumnya dan bukan hasil ini sendiri.
     const delta = await hitungDelta(patientId, testId, item.value, test?.code, test?.delta_limit_percent);
-    await pool.query(
+    const [insertResult] = await pool.query(
       `INSERT INTO lab_results (patient_id, test_id, request_id, request_item_id, result_value, result_numeric, unit, flag, instrument_id, raw_message, status, delta_percent, delta_flag)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'preliminary', ?, ?)`,
       [
@@ -224,6 +225,14 @@ async function saveInstrumentResults(instrumentId, protocol, sampleId, results, 
     );
     if (delta?.flag === 'check') {
       console.warn(`[Delta] ${test?.code} pasien ${patientId}: ${delta.sebelumnya} -> ${item.value} (${delta.percent}%) — periksa kemungkinan sampel tertukar`);
+    }
+    // Nilai kritis dari alat tidak boleh menunggu seseorang kebetulan
+    // membuka LIS atau SIMRS kebetulan memoling -- kirim notifikasi segera.
+    // Best-effort: tidak pernah melempar, tidak menunda hasil berikutnya.
+    if (flag === 'critical') {
+      notifikasiKritisKeSimrs(insertResult.insertId).then((r) => {
+        if (!r.ok) console.warn(`[Kritis] Gagal notifikasi SIMRS untuk hasil #${insertResult.insertId}:`, r.error || r.reason || r.status);
+      });
     }
     if (link.request_item_id) {
       await pool.query("UPDATE lab_request_items SET status='done' WHERE id=?", [link.request_item_id]).catch(() => {});

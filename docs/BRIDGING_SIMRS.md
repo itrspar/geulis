@@ -14,10 +14,19 @@ Sisi SIMRS: `src/bridging/ApiGEULIS.java` pada source SIMRS-Khanza (branch
 ```
 SIMRS  ──POST /api/bridging/order────────▶  GeuLIS   (kirim permintaan)
 SIMRS  ──GET  /api/bridging/result/{no}─▶  GeuLIS   (tarik hasil)
+SIMRS  ──POST /api/bridging/result/{id}/verify▶ GeuLIS   (verifikasi dari SIMRS)
+GeuLIS ──POST {simrs_base_url}/notifikasi-kritis──▶  SIMRS   (nilai kritis, SEGERA)
+GeuLIS ──POST {simrs_base_url}/hasil-lab──────────▶  SIMRS   (hasil final, setelah verifikasi)
 ```
 
 Menu di **Permintaan Lab → klik kanan**: "Kirim Permintaan ke GeuLIS" dan
 "Ambil Hasil dari GeuLIS", sejajar dengan LICA/MEDQLAB yang sudah ada.
+
+Dua baris terakhir kebalikan arahnya: GeuLIS yang memanggil SIMRS, bukan
+menunggu ditanya. Ini supaya LIS bisa benar-benar jadi layanan latar
+belakang — nilai kritis dari alat tidak boleh menunggu SIMRS kebetulan
+memoling GET /result, apalagi menunggu seseorang membuka layar LIS
+(lihat §6b).
 
 Hasil yang ditarik **tidak langsung masuk rekam medis**. Ia mendarat di tabel
 singgahan `temporary_permintaan_lab`, lalu form *Periksa Laboratorium* terbuka
@@ -243,6 +252,47 @@ Error yang mungkin muncul:
 | `403` | `simrs_user_id` belum dipetakan / akun GeuLIS nonaktif | Minta admin LIS memetakan akun via menu Mapping SIMRS |
 | `404` | `result_id` tidak ditemukan | — |
 | `409` | Hasil sudah `final`/`corrected`, tidak bisa diverifikasi ulang lewat jalur ini | Sembunyikan tombol verifikasi untuk hasil yang statusnya sudah `completed` |
+
+### §6b. Webhook `POST {simrs_base_url}/notifikasi-kritis` — **SIMRS yang mengimplementasikan, GeuLIS yang memanggil**
+
+Arah terbalik dari endpoint lain di dokumen ini. GeuLIS memanggil endpoint ini
+di SIMRS **segera** setiap kali alat mengirim hasil berpenanda kritis —
+sebelum siapa pun sempat memverifikasi, dan tanpa menunggu SIMRS memoling
+`GET /result`. Ini menutup celah paling berbahaya dari model "LIS jadi
+layanan latar belakang": nilai kritis yang muncul di luar jam ada orang
+menatap layar tidak boleh baru diketahui berjam-jam kemudian.
+
+**Prasyarat**: `simrs_config` di GeuLIS harus aktif (`is_active=1`, diisi
+lewat menu Mapping SIMRS → Konfigurasi). URL yang dipanggil adalah
+`{base_url}/notifikasi-kritis`, dengan header autentikasi mengikuti
+`auth_type` yang dikonfigurasi (`bearer` → header `Authorization`, `api_key`
+→ header `x-api-key`).
+
+Body yang dikirim GeuLIS:
+
+```json
+{
+  "no_rm": "000123",
+  "nama_pasien": "BUDI SANTOSO",
+  "no_order": "PL202609030001",
+  "kode_pemeriksaan": "K",
+  "nama_pemeriksaan": "Kalium (K+)",
+  "nilai_hasil": "6.8",
+  "satuan": "mmol/L",
+  "flag": "critical",
+  "waktu_hasil": "2026-09-11 09:50:03"
+}
+```
+
+SIMRS wajib membalas `200` (isi body bebas) agar tercatat terkirim di log
+GeuLIS — kegagalan hanya dicatat sebagai peringatan di log server, TIDAK
+pernah menggagalkan penyimpanan hasil dari alat maupun mengulang otomatis.
+Karena itu SIMRS sebaiknya tetap menyediakan jalur cadangan (mis. cek
+berkala `GET /result` atau daftar `unacked_critical` internal LIS) untuk
+kasus notifikasi ini gagal terkirim (jaringan putus, dsb).
+
+`kode_pemeriksaan` sudah diterjemahkan lewat mapping tes aktif (§4) bila
+ada; kalau belum dipetakan, dikirim apa adanya sebagai kode LIS.
 
 ### GET `/api/bridging/test-catalog`
 
