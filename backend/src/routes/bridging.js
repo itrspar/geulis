@@ -4,6 +4,7 @@ import { requireApiKey, requirePermission } from '../middleware/auth.js';
 import { audit } from '../services/audit.js';
 import { genRequestNo } from '../services/requestNo.js';
 import { pushRequestResultsToSimrs } from '../services/simrsPush.js';
+import { rujukanBerlaku, labelRujukan, umurHari } from '../services/rujukanUmur.js';
 
 const router = Router();
 
@@ -236,13 +237,16 @@ router.get('/result/:simrs_order_id', async (req, res) => {
     // satu baris per pemeriksaan (hindari duplikat akibat >1 kode SIMRS per tes).
     const [resultRows] = await pool.query(`
       SELECT lri.test_id,
-             lt.code as test_code, lt.name as test_name, lt.reference_min, lt.reference_max,
+             lt.code as test_code, lt.name as test_name,
+             lt.reference_min, lt.reference_max, lt.reference_min_l, lt.reference_max_l,
+             lt.reference_min_p, lt.reference_max_p, lt.critical_min, lt.critical_max,
              COALESCE(lri.simrs_code,
                (SELECT sm.simrs_field FROM simrs_mappings sm
                   WHERE sm.lis_field = lt.code AND sm.mapping_type = 'test'
                   ORDER BY sm.is_active DESC, sm.id ASC LIMIT 1)) as code_simrs,
              res.id AS result_id, res.result_value, res.unit, res.flag, res.status,
-             res.delta_flag, res.critical_ack, res.verified_at, res.result_at
+             res.delta_flag, res.critical_ack, res.verified_at, res.result_at,
+             res.ref_min_dipakai, res.ref_max_dipakai, res.rujukan_label
       FROM lab_request_items lri
       JOIN lab_tests lt ON lt.id = lri.test_id
       LEFT JOIN lab_results res ON res.id = (
@@ -257,7 +261,20 @@ router.get('/result/:simrs_order_id', async (req, res) => {
     `, [requestData.id, requestData.patient_id, requestData.requested_at, requestData.id, requestData.id]);
 
     // Format output
-    const formattedResults = resultRows.map(r => {
+    //
+    // Rentang rujukan: bila hasil sudah pernah dinilai (ref_min_dipakai /
+    // rujukan_label terisi -- lihat POST /results/batch), pakai persis nilai
+    // itu, supaya SIMRS menampilkan rentang yang SAMA dengan yang menghasilkan
+    // flag-nya. Kalau belum ada (mis. hasil otomatis dari alat, yang belum
+    // menyimpan rentang terpakai), hitung langsung memakai umur/jenis kelamin
+    // pasien saat ini (rujukanBerlaku) -- bukan jatuh ke rentang umum begitu
+    // saja, karena rentang umum bisa keliru untuk anak/lansia/kehamilan.
+    const konteksPasien = {
+      gender: requestData.gender || null,
+      umurHari: umurHari(requestData.birth_date),
+      kondisi: null,
+    };
+    const formattedResults = await Promise.all(resultRows.map(async (r) => {
       const hasValue = r.result_value != null && r.result_value !== '';
       const verified = r.status === 'final' || r.status === 'corrected';
       // Kritis/abnormal/delta mencurigakan yang belum dilaporkan (critical_ack)
@@ -265,6 +282,16 @@ router.get('/result/:simrs_order_id', async (req, res) => {
       // POST /result/:id/verify -- SIMRS bisa pakai flag ini untuk menampilkan
       // input pelaporan itu di muka, bukan menunggu 400 dari server dulu.
       const perluLaporan = ['critical', 'abnormal'].includes(r.flag) || r.delta_flag === 'check';
+
+      let reference = r.rujukan_label || null;
+      if (!reference && (r.ref_min_dipakai != null || r.ref_max_dipakai != null)) {
+        reference = `${r.ref_min_dipakai ?? ''} - ${r.ref_max_dipakai ?? ''}`;
+      }
+      if (!reference) {
+        const rj = await rujukanBerlaku({ id: r.test_id, ...r }, konteksPasien);
+        reference = labelRujukan(rj) || null;
+      }
+
       return {
         result_id: r.result_id || null,
         test_code: r.test_code,
@@ -272,14 +299,14 @@ router.get('/result/:simrs_order_id', async (req, res) => {
         test_name: r.test_name,
         result_value: hasValue ? r.result_value : null,
         unit: r.unit,
-        reference: r.reference_min || r.reference_max ? `${r.reference_min || ''} - ${r.reference_max || ''}` : null,
+        reference,
         flag: r.flag,
         result_time: r.result_at,
         // completed hanya bila sudah diverifikasi; jika ada nilai tapi belum verifikasi => preliminary
         status: hasValue ? (verified ? 'completed' : 'preliminary') : 'pending',
         needs_report_before_verify: !verified && hasValue && perluLaporan && !r.critical_ack,
       };
-    });
+    }));
 
     res.json({
       simrs_order_id: requestData.simrs_order_id,

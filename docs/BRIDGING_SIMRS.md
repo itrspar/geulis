@@ -176,6 +176,15 @@ tahu pemetaan alat sendiri — kalau pemetaan di GeuLIS berubah, isi
 `status` per pemeriksaan: `pending` (belum ada hasil), `preliminary` (ada hasil,
 belum diverifikasi), `completed` (sudah diverifikasi).
 
+`reference` **bukan sekadar rentang umum dari katalog** — urutan sumbernya:
+(1) rentang yang tersimpan di hasil itu sendiri (`ref_min_dipakai`/
+`rujukan_label`, diisi saat entri manual), (2) bila belum ada, dihitung
+langsung dari umur & jenis kelamin pasien saat ini terhadap tabel rentang
+per-umur (`reference_ranges`), (3) baru jatuh ke rentang umum katalog kalau
+memang tidak ada rentang khusus yang cocok. Pasien anak/lansia/kehamilan bisa
+menampilkan rentang berbeda dari pasien dewasa untuk pemeriksaan yang sama —
+ini disengaja, bukan galat.
+
 Field tambahan per hasil, dipakai untuk verifikasi (§6a): `result_id` (dipakai
 sebagai `:id` pada `POST /result/{id}/verify`), `needs_report_before_verify`
 (`true` bila hasil berpenanda kritis/abnormal/delta mencurigakan dan belum ada
