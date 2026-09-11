@@ -4,7 +4,6 @@ import { requireApiKey, requirePermission } from '../middleware/auth.js';
 import { audit } from '../services/audit.js';
 import { genRequestNo } from '../services/requestNo.js';
 import { pushRequestResultsToSimrs } from '../services/simrsPush.js';
-import { rujukanBerlaku, labelRujukan, umurHari } from '../services/rujukanUmur.js';
 
 const router = Router();
 
@@ -239,14 +238,13 @@ router.get('/result/:simrs_order_id', async (req, res) => {
       SELECT lri.test_id,
              lt.code as test_code, lt.name as test_name,
              lt.reference_min, lt.reference_max, lt.reference_min_l, lt.reference_max_l,
-             lt.reference_min_p, lt.reference_max_p, lt.critical_min, lt.critical_max,
+             lt.reference_min_p, lt.reference_max_p,
              COALESCE(lri.simrs_code,
                (SELECT sm.simrs_field FROM simrs_mappings sm
                   WHERE sm.lis_field = lt.code AND sm.mapping_type = 'test'
                   ORDER BY sm.is_active DESC, sm.id ASC LIMIT 1)) as code_simrs,
              res.id AS result_id, res.result_value, res.unit, res.flag, res.status,
-             res.delta_flag, res.critical_ack, res.verified_at, res.result_at,
-             res.ref_min_dipakai, res.ref_max_dipakai, res.rujukan_label
+             res.delta_flag, res.critical_ack, res.verified_at, res.result_at
       FROM lab_request_items lri
       JOIN lab_tests lt ON lt.id = lri.test_id
       LEFT JOIN lab_results res ON res.id = (
@@ -262,19 +260,16 @@ router.get('/result/:simrs_order_id', async (req, res) => {
 
     // Format output
     //
-    // Rentang rujukan: bila hasil sudah pernah dinilai (ref_min_dipakai /
-    // rujukan_label terisi -- lihat POST /results/batch), pakai persis nilai
-    // itu, supaya SIMRS menampilkan rentang yang SAMA dengan yang menghasilkan
-    // flag-nya. Kalau belum ada (mis. hasil otomatis dari alat, yang belum
-    // menyimpan rentang terpakai), hitung langsung memakai umur/jenis kelamin
-    // pasien saat ini (rujukanBerlaku) -- bukan jatuh ke rentang umum begitu
-    // saja, karena rentang umum bisa keliru untuk anak/lansia/kehamilan.
-    const konteksPasien = {
-      gender: requestData.gender || null,
-      umurHari: umurHari(requestData.birth_date),
-      kondisi: null,
-    };
-    const formattedResults = await Promise.all(resultRows.map(async (r) => {
+    // Rentang rujukan SELALU dari nilai yang SIMRS sendiri kirim lewat
+    // POST /test-catalog (lab_tests.reference_min/max, atau varian per
+    // gender bila diisi) -- satu sumber kebenaran, supaya tidak pernah
+    // berbeda dari yang sedang dikonfigurasi SIMRS saat itu. Sengaja TIDAK
+    // memakai reference_ranges (rentang per umur ala LIS, diisi manual di
+    // GeuLIS) di jalur SIMRS ini, walau LIS memakainya di tempat lain
+    // (lembar cetak, portal pasien) -- keduanya sumber data yang berbeda,
+    // dan mencampurnya di sini berarti SIMRS bisa menampilkan rentang yang
+    // tidak pernah ia atur sendiri.
+    const formattedResults = resultRows.map((r) => {
       const hasValue = r.result_value != null && r.result_value !== '';
       const verified = r.status === 'final' || r.status === 'corrected';
       // Kritis/abnormal/delta mencurigakan yang belum dilaporkan (critical_ack)
@@ -283,14 +278,16 @@ router.get('/result/:simrs_order_id', async (req, res) => {
       // input pelaporan itu di muka, bukan menunggu 400 dari server dulu.
       const perluLaporan = ['critical', 'abnormal'].includes(r.flag) || r.delta_flag === 'check';
 
-      let reference = r.rujukan_label || null;
-      if (!reference && (r.ref_min_dipakai != null || r.ref_max_dipakai != null)) {
-        reference = `${r.ref_min_dipakai ?? ''} - ${r.ref_max_dipakai ?? ''}`;
+      let min = r.reference_min;
+      let max = r.reference_max;
+      if (requestData.gender === 'L' && (r.reference_min_l != null || r.reference_max_l != null)) {
+        min = r.reference_min_l ?? min;
+        max = r.reference_max_l ?? max;
+      } else if (requestData.gender === 'P' && (r.reference_min_p != null || r.reference_max_p != null)) {
+        min = r.reference_min_p ?? min;
+        max = r.reference_max_p ?? max;
       }
-      if (!reference) {
-        const rj = await rujukanBerlaku({ id: r.test_id, ...r }, konteksPasien);
-        reference = labelRujukan(rj) || null;
-      }
+      const reference = min != null || max != null ? `${min ?? ''} - ${max ?? ''}` : null;
 
       return {
         result_id: r.result_id || null,
@@ -306,7 +303,7 @@ router.get('/result/:simrs_order_id', async (req, res) => {
         status: hasValue ? (verified ? 'completed' : 'preliminary') : 'pending',
         needs_report_before_verify: !verified && hasValue && perluLaporan && !r.critical_ack,
       };
-    }));
+    });
 
     res.json({
       simrs_order_id: requestData.simrs_order_id,
