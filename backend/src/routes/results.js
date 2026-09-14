@@ -30,6 +30,29 @@ async function findRequestLink(patientId, testId, preferItemId) {
   return { request_item_id: row?.request_item_id ?? null, request_id: row?.request_id ?? null };
 }
 
+/**
+ * Tutup satu permintaan (status -> 'completed') kalau seluruh hasilnya sudah
+ * final/corrected. Dipanggil dari SEMUA jalur verifikasi -- tanpa ini,
+ * status permintaan menggantung 'pending' selamanya tergantung jalur mana
+ * yang kebetulan dipakai petugas (mis. verifikasi satu-satu, atau
+ * verifikasi sekaligus per pasien+tanggal), padahal semua hasilnya sudah
+ * beres. Aman dipanggil berkali-kali; tidak melempar kalau requestId kosong
+ * atau permintaannya sudah selesai/dibatalkan.
+ */
+async function tutupJikaSelesai(requestId) {
+  if (!requestId) return;
+  const [[sisa]] = await pool.query(
+    "SELECT COUNT(*) AS n FROM lab_results WHERE request_id = ? AND status = 'preliminary'",
+    [requestId]
+  );
+  if (sisa.n === 0) {
+    await pool.query(
+      "UPDATE lab_requests SET status='completed', completed_at=NOW() WHERE id=? AND status NOT IN ('completed','cancelled')",
+      [requestId]
+    ).catch(() => {});
+  }
+}
+
 router.get('/groups', authenticate, requirePermission('results.view'), async (req, res) => {
   const q = req.query.q || '';
   const date = req.query.date;
@@ -380,6 +403,8 @@ router.patch('/:id/verify', authenticate, requirePermission('results.manage'), a
     "UPDATE lab_results SET status='final', verified_by=?, verified_at=NOW() WHERE id=?",
     [req.user.id, req.params.id]
   );
+  const [[hasil]] = await pool.query('SELECT request_id FROM lab_results WHERE id = ?', [req.params.id]);
+  await tutupJikaSelesai(hasil?.request_id);
   await audit(req, 'VERIFY', 'result', req.params.id);
   res.json({ ok: true });
 });
@@ -478,10 +503,22 @@ router.post('/verify-request/:requestId', authenticate, requirePermission('resul
 router.post('/verify-group', authenticate, requirePermission('results.manage'), async (req, res) => {
   const { patient_id, exam_date } = req.body;
   if (!patient_id || !exam_date) return res.status(400).json({ error: 'Parameter tidak lengkap' });
+
+  // Permintaan yang tersentuh -- direkam SEBELUM update (sesudahnya statusnya
+  // sudah 'final', tidak lagi cocok filter preliminary) supaya tiap
+  // permintaan bisa dicek & ditutup kalau memang sudah lengkap.
+  const [terpengaruh] = await pool.query(
+    `SELECT DISTINCT request_id FROM lab_results
+      WHERE patient_id=? AND DATE(result_at)=? AND status='preliminary' AND request_id IS NOT NULL`,
+    [patient_id, exam_date]
+  );
+
   const [r] = await pool.query(
     "UPDATE lab_results SET status='final', verified_by=?, verified_at=NOW() WHERE patient_id=? AND DATE(result_at)=? AND status='preliminary'",
     [req.user.id, patient_id, exam_date]
   );
+  for (const { request_id } of terpengaruh) await tutupJikaSelesai(request_id);
+
   await audit(req, 'VERIFY', 'result', null, { patient_id, exam_date, verified: r.affectedRows });
   res.json({ ok: true, verified: r.affectedRows });
 });
