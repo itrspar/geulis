@@ -6,6 +6,7 @@ import { konteksPasien } from '../services/konteksPasien.js';
 import { simpanRevisi } from '../services/revisiHasil.js';
 import { audit } from '../services/audit.js';
 import { pushRequestResultsToSimrs } from '../services/simrsPush.js';
+import { rujukanBerlaku, labelRujukan, umurHari, SUMBER_SIMRS } from '../services/rujukanUmur.js';
 
 const router = Router();
 
@@ -104,7 +105,7 @@ router.get('/', authenticate, requirePermission('results.view'), async (req, res
                     lt.reference_min, lt.reference_max,
                     lt.reference_min_l, lt.reference_max_l, lt.reference_min_p, lt.reference_max_p,
                     lt.show_in_report, lt.sort_order,
-                    p.name AS patient_name, p.gender AS patient_gender,
+                    p.name AS patient_name, p.gender AS patient_gender, p.birth_date AS patient_birth_date,
                     p.medical_record_no, i.name AS instrument_name,
                     vu.full_name AS verified_by_name,
                     cu.full_name AS corrected_by_name,
@@ -138,6 +139,22 @@ router.get('/', authenticate, requirePermission('results.view'), async (req, res
   if (kondisi.length) sql += ' WHERE ' + kondisi.join(' AND ');
   sql += ' ORDER BY res.result_at DESC LIMIT 200';
   const [rows] = await pool.query(sql, params);
+
+  // Lembar cetak (ReportModal) dan halaman ini sebelumnya HANYA membaca
+  // kolom rata lab_tests -- rentang bertingkat per umur/gender yang SIMRS
+  // kirim (mis. T3 anak vs dewasa) tidak pernah terlihat di sini, walau
+  // SIMRS sendiri sudah menampilkannya dengan benar lewat bridging. Hasil
+  // lama yang sudah punya rujukan_label tersimpan (entri manual) dibiarkan
+  // apa adanya -- baru dihitung kalau memang belum ada, supaya laporan LIS
+  // dan yang dilihat SIMRS tidak pernah menampilkan rentang yang berbeda
+  // untuk hasil yang sama.
+  for (const r of rows) {
+    if (r.rujukan_label) continue;
+    const konteks = { gender: r.patient_gender || null, umurHari: umurHari(r.patient_birth_date), kondisi: null };
+    const rj = await rujukanBerlaku({ id: r.test_id }, konteks, { sumber: SUMBER_SIMRS });
+    if (rj.sumber === 'rentang') r.rujukan_label = labelRujukan(rj);
+  }
+
   res.json(rows);
 });
 

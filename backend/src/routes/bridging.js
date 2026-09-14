@@ -4,13 +4,7 @@ import { requireApiKey, requirePermission } from '../middleware/auth.js';
 import { audit } from '../services/audit.js';
 import { genRequestNo } from '../services/requestNo.js';
 import { pushRequestResultsToSimrs } from '../services/simrsPush.js';
-import { rujukanBerlaku, labelRujukan, umurHari, kosongkanCacheRujukan } from '../services/rujukanUmur.js';
-
-// Tanda asal baris reference_ranges yang dikirim SIMRS lewat test-catalog --
-// supaya jalur bridging tidak pernah menampilkan rentang yang diisi manual
-// di LIS (menu Nilai Rujukan), dan sinkronisasi berikutnya bisa mengganti
-// SELURUH rentang milik SIMRS tanpa menyentuh entri manual LIS yang lain.
-const SUMBER_SIMRS = 'SIMRS';
+import { rujukanBerlaku, labelRujukan, umurHari, kosongkanCacheRujukan, SUMBER_SIMRS } from '../services/rujukanUmur.js';
 
 /** Umur dalam hari dari {nilai, satuan}. Satuan mengikuti konvensi menu
  *  Nilai Rujukan GeuLIS sendiri (hari/bulan/tahun) -- supaya SIMRS tidak

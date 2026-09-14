@@ -1,6 +1,16 @@
 import pool from '../config/db.js';
 
 /**
+ * Tanda asal baris reference_ranges yang dikirim SIMRS lewat
+ * POST /bridging/test-catalog -- dipakai bridging.js (menulis & membaca)
+ * dan results.js (membaca, untuk lembar cetak) supaya keduanya menampilkan
+ * rentang rujukan yang SAMA PERSIS untuk hasil yang sama. Satu konstanta
+ * bersama, bukan string 'SIMRS' diketik ulang di tiap file -- salah ketik
+ * di satu tempat berarti rentang tersembunyi tanpa pesan galat apa pun.
+ */
+export const SUMBER_SIMRS = 'SIMRS';
+
+/**
  * Pemilihan nilai rujukan menurut umur, jenis kelamin, dan kondisi.
  *
  * Ditulis agar menilai SAMA PERSIS dengan Oase LIS (internal/domain/rujukan.go):

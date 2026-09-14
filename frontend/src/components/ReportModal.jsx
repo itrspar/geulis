@@ -6,13 +6,18 @@ import { api } from '../api';
  *
  * Wajib tercetak: PMK 43/2013 Bab IX, komponen laporan nomor 9.
  *
- * Rujukan spesifik gender (reference_min_l/_p) didahulukan karena itulah yang
- * terisi setelah katalog tes diisi; kolom lama reference_min/max jadi cadangan.
+ * Urutan sumber: (1) rujukan_label -- rentang bertingkat per umur/gender
+ * (mis. T3 anak vs dewasa) yang backend sudah hitungkan (lihat GET /results
+ * di results.js), sama seperti yang SIMRS lihat lewat bridging. Tanpa ini,
+ * SIMRS dan lembar cetak LIS sendiri bisa menampilkan rentang BERBEDA untuk
+ * hasil yang sama persis. (2) reference_min_l/_p -- rujukan spesifik gender
+ * dari katalog. (3) reference_min/max -- kolom lama, cadangan terakhir.
  * Sebelumnya laporan hanya membaca kolom lama, sehingga di rumah sakit yang
  * rujukannya diisi per gender kolom NILAI RUJUKAN tercetak "-" untuk semua
  * parameter walaupun datanya ada.
  */
 function rentangRujukan(r, gender) {
+  if (r.rujukan_label) return r.rujukan_label;
   let min = r.reference_min;
   let max = r.reference_max;
   if (gender === 'L' && (r.reference_min_l != null || r.reference_max_l != null)) {
