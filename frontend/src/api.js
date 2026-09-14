@@ -192,6 +192,7 @@ export const api = {
   apiKeys: {
     list: () => request('/api-keys'),
     create: (body) => request('/api-keys', { method: 'POST', body: JSON.stringify(body) }),
+    reveal: (id) => request(`/api-keys/${id}/reveal`, { method: 'POST' }),
     remove: (id) => request(`/api-keys/${id}`, { method: 'DELETE' })
   },
   instruments: {

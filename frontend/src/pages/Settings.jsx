@@ -100,6 +100,18 @@ export default function Settings() {
     }
   };
 
+  // Key lengkap tidak lagi ikut di daftar -- diminta terpisah saat memang
+  // mau disalin, dan tercatat di log audit tiap kali disingkap.
+  const salinApiKey = async (id) => {
+    try {
+      const res = await api.apiKeys.reveal(id);
+      await navigator.clipboard.writeText(res.api_key);
+      Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'API Key disalin!', showConfirmButton: false, timer: 1500 });
+    } catch (err) {
+      Swal.fire('Gagal', err.message, 'error');
+    }
+  };
+
   const revokeApiKey = async (id, name) => {
     const res = await Swal.fire({
       title: 'Cabut Akses?',
@@ -219,14 +231,12 @@ export default function Settings() {
                   <tr key={k.id} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '0.75rem 0.5rem' }}><strong>{k.name}</strong></td>
                     <td style={{ padding: '0.75rem 0.5rem', fontFamily: 'monospace', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span>khanza_••••••••••••••••</span>
-                      <button 
-                        className="btn-sm secondary" 
-                        title="Salin API Key"
-                        onClick={() => {
-                          navigator.clipboard.writeText(k.api_key);
-                          Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'API Key disalin!', showConfirmButton: false, timer: 1500 });
-                        }}
+                      <span>{k.api_key_masked || '(tidak bisa dipulihkan)'}</span>
+                      <button
+                        className="btn-sm secondary"
+                        title="Salin API Key lengkap"
+                        disabled={!k.api_key_masked}
+                        onClick={() => salinApiKey(k.id)}
                         style={{ padding: '0.2rem 0.4rem', fontSize: '0.8rem' }}
                       >
                         📋

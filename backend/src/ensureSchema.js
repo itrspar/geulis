@@ -1,4 +1,5 @@
 import pool from './config/db.js';
+import { hashApiKey, enkripsiApiKey } from './services/rahasiaApiKey.js';
 
 /** Upgrade skema lama (simrs_patient_id) ke order_no */
 export async function ensureSchema() {
@@ -733,6 +734,27 @@ export async function ensureSchema() {
        FOREIGN KEY (geulis_user_id) REFERENCES users(id) ON DELETE CASCADE
      )`
   ).catch((e) => console.warn('[schema] simrs_user_map:', e.message));
+
+  // API key bridging: dari plaintext ke hash (autentikasi) + terenkripsi
+  // (pemulihan "salin lagi" di UI). Lihat services/rahasiaApiKey.js untuk
+  // alasan dua kolom. Migrasi sekali jalan, idempoten -- key_hash IS NULL
+  // menandai baris yang belum dimigrasikan.
+  await ensureColumn('api_keys', 'key_hash', "ADD COLUMN key_hash CHAR(64) NULL COMMENT 'SHA-256 api_key, dipakai autentikasi' AFTER api_key");
+  await ensureColumn('api_keys', 'api_key_enc', "ADD COLUMN api_key_enc TEXT NULL COMMENT 'api_key terenkripsi AES-256-GCM, hanya utk salin ulang' AFTER key_hash");
+  await pool.query("ALTER TABLE api_keys MODIFY api_key VARCHAR(100) NULL").catch(() => {});
+  await pool.query('CREATE UNIQUE INDEX idx_api_keys_hash ON api_keys (key_hash)').catch(() => {});
+  {
+    const [belumMigrasi] = await pool.query(
+      "SELECT id, api_key FROM api_keys WHERE key_hash IS NULL AND api_key IS NOT NULL"
+    ).catch(() => [[]]);
+    for (const row of belumMigrasi) {
+      await pool.query(
+        'UPDATE api_keys SET key_hash=?, api_key_enc=?, api_key=NULL WHERE id=?',
+        [hashApiKey(row.api_key), enkripsiApiKey(row.api_key), row.id]
+      ).catch((e) => console.warn(`[schema] migrasi api_keys #${row.id}:`, e.message));
+    }
+    if (belumMigrasi.length) console.log(`[schema] ${belumMigrasi.length} api_keys dimigrasikan dari plaintext ke hash+enkripsi`);
+  }
 
   // --- Charset kolom pesan mentah alat ---
   //

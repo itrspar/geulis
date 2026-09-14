@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import pool from '../config/db.js';
+import { hashApiKey } from '../services/rahasiaApiKey.js';
 
 export function authenticate(req, res, next) {
   const header = req.headers.authorization;
@@ -62,7 +63,8 @@ export async function requireApiKey(req, res, next) {
   }
 
   try {
-    const [rows] = await pool.query('SELECT * FROM api_keys WHERE api_key = ?', [apiKey]);
+    // Pencarian lewat hash, bukan plaintext -- lihat services/rahasiaApiKey.js.
+    const [rows] = await pool.query('SELECT * FROM api_keys WHERE key_hash = ?', [hashApiKey(apiKey)]);
     if (rows.length === 0) {
       return res.status(401).json({ error: 'API Key tidak valid' });
     }
