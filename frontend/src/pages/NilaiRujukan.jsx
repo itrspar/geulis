@@ -400,27 +400,27 @@ export default function NilaiRujukan() {
       )}
 
       <style>{`
-        .keterangan { color: #667; font-size: 0.9rem; max-width: 46rem; }
+        .keterangan { color: var(--muted); font-size: 0.9rem; max-width: 46rem; }
         .baris-alat { display: flex; gap: 0.5rem; align-items: flex-end; flex-wrap: wrap; margin: 0.75rem 0; }
         .tabel { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
-        .tabel th, .tabel td { text-align: left; padding: 0.55rem 0.7rem; border-bottom: 1px solid #e3e6ea; vertical-align: top; }
-        .tabel th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #778; }
-        .kosong { color: #889; font-style: italic; }
-        .sumber { font-size: 0.78rem; color: #889; }
+        .tabel th, .tabel td { text-align: left; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+        .tabel th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+        .kosong { color: var(--muted); font-style: italic; }
+        .sumber { font-size: 0.78rem; color: var(--muted); }
         .aksi { white-space: nowrap; }
         .kecil { font-size: 0.8rem; padding: 0.25rem 0.6rem; }
-        .kecil.bahaya { background: #b93a25; }
-        .kotak-coba { margin-top: 2rem; padding: 1rem 1.2rem; border: 1px solid #e3e6ea; border-radius: 6px; background: #fafbfc; }
+        .kecil.bahaya { background: var(--danger); }
+        .kotak-coba { margin-top: 2rem; padding: 1rem 1.2rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface2); }
         .kotak-coba h3 { margin: 0 0 0.3rem; }
         .hasil-coba { margin-top: 0.6rem; font-size: 0.95rem; display: flex; flex-direction: column; gap: 0.3rem; }
-        .peringatan { color: #8a5a10; font-size: 0.88rem; }
-        .flag-high, .flag-critical { color: #b93a25; }
-        .flag-low { color: #1a5fb4; }
-        .flag-normal { color: #1a7f4b; }
-        .modal-latar { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: grid; place-items: center; z-index: 50; }
-        .modal { background: #fff; padding: 1.4rem 1.6rem; border-radius: 8px; width: min(38rem, 92vw); max-height: 90vh; overflow-y: auto; }
+        .peringatan { color: var(--warning); font-size: 0.88rem; }
+        .flag-high, .flag-critical { color: var(--danger); }
+        .flag-low { color: #60a5fa; }
+        .flag-normal { color: #34d399; }
+        .modal-latar { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: grid; place-items: center; z-index: 50; }
+        .modal { background: var(--surface); border: 1px solid var(--border); padding: 1.4rem 1.6rem; border-radius: 8px; width: min(38rem, 92vw); max-height: 90vh; overflow-y: auto; }
         .modal h3 { margin-top: 0; }
-        .modal label { display: block; font-size: 0.82rem; color: #667; margin-top: 0.8rem; }
+        .modal label { display: block; font-size: 0.82rem; color: var(--muted); margin-top: 0.8rem; }
         .modal input, .modal select { width: 100%; box-sizing: border-box; }
         .modal-aksi { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.2rem; }
       `}</style>
