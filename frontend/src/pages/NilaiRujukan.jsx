@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import Swal from 'sweetalert2';
+import ComboboxTes from '../components/ComboboxTes';
 
 /**
  * Pengelolaan nilai rujukan menurut umur, jenis kelamin, dan kondisi.
@@ -203,14 +204,11 @@ export default function NilaiRujukan() {
       </p>
 
       <div className="baris-alat">
-        <select value={testId} onChange={(e) => { setTestId(e.target.value); setHasilCoba(null); }}>
-          <option value="">— pilih pemeriksaan —</option>
-          {tests.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.code} — {t.name}
-            </option>
-          ))}
-        </select>
+        <ComboboxTes
+          tests={tests}
+          value={testId}
+          onChange={(v) => { setTestId(v); setHasilCoba(null); }}
+        />
         {testId && (
           <button onClick={() => { setForm(KOSONG); setEditId(null); setBuka(true); }}>
             + Rentang
