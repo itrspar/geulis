@@ -568,6 +568,62 @@ router.post('/test-catalog', async (req, res) => {
   }
 });
 
+/**
+ * POST /bridging/test-catalog/map
+ *
+ * Tempelkan satu id_template Khanza ke satu lis_code GeuLIS yang SUDAH ADA --
+ * dipakai fitur "Petakan Langsung" (klik dua kali) di tab Kemampuan Alat.
+ * Beda dari POST /test-catalog biasa: endpoint ini TIDAK PERNAH membuat
+ * lab_tests baru, cuma menempelkan mapping ke kode yang memang sudah berdiri.
+ * Kalau petugas SIMRS salah ketik kode LIS, harusnya dapat 404 -- bukan
+ * lab_tests baru dengan kode ngasal yang menumpuk di katalog.
+ *
+ * Satu lis_code memang boleh dipakai banyak id_template sekaligus (mis. HbA1c
+ * di beberapa kelas/panel Khanza, satu tes LIS, satu alat) -- itu kasus wajar,
+ * sengaja tidak ditolak.
+ */
+router.post('/test-catalog/map', async (req, res) => {
+  const idTemplate = String(req.body?.id_template ?? '').trim();
+  const lisCode = String(req.body?.lis_code ?? '').trim();
+  if (!idTemplate || !lisCode) {
+    return res.status(400).json({ error: 'id_template dan lis_code wajib diisi.' });
+  }
+
+  try {
+    const [[lt]] = await pool.query('SELECT id, name FROM lab_tests WHERE code = ?', [lisCode]);
+    if (!lt) {
+      return res.status(404).json({ error: 'Kode LIS tidak ditemukan' });
+    }
+
+    const [[mapAda]] = await pool.query(
+      "SELECT id FROM simrs_mappings WHERE mapping_type='test' AND simrs_field = ?",
+      [idTemplate]
+    );
+
+    let action;
+    if (mapAda) {
+      await pool.query('UPDATE simrs_mappings SET lis_field=?, is_active=1 WHERE id=?', [lisCode, mapAda.id]);
+      action = 'diganti';
+    } else {
+      await pool.query(
+        "INSERT INTO simrs_mappings (mapping_type, lis_field, simrs_field, is_active) VALUES ('test', ?, ?, 1)",
+        [lisCode, idTemplate]
+      );
+      action = 'dipetakan';
+    }
+
+    await audit(req, 'MAP', 'test_catalog', null, { source: 'bridging', id_template: idTemplate, lis_code: lisCode, action });
+    res.status(action === 'dipetakan' ? 201 : 200).json({
+      id_template: idTemplate,
+      lis_code: lisCode,
+      lis_name: lt.name,
+      action,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Gagal memetakan', details: err.message });
+  }
+});
+
 // DELETE /bridging/test-catalog/:id_template  (?mode=deactivate untuk nonaktif saja)
 router.delete('/test-catalog/:id_template', async (req, res) => {
   const idTemplate = String(req.params.id_template).trim();

@@ -346,6 +346,36 @@ lab_tests-nya hilang), `skipped` (`id_template`/`name` kosong).
 `lis_code` **selalu ditentukan GeuLIS** — SIMRS simpan nilai balasannya. Nilai
 kritis dan tautan alat tidak pernah diterima dari sini.
 
+### POST `/api/bridging/test-catalog/map`
+
+Tempelkan satu `id_template` ke satu `lis_code` GeuLIS yang **sudah ada** —
+dipakai fitur "Petakan Langsung" (klik dua kali) di tab Kemampuan Alat. Beda
+dari `POST /test-catalog` di atas: endpoint ini **tidak pernah membuat**
+`lab_tests` baru, cuma menempelkan mapping ke kode yang memang sudah berdiri.
+
+```json
+{ "id_template": "3765", "lis_code": "TSH" }
+```
+
+Balasan:
+
+```json
+{ "id_template": "3765", "lis_code": "TSH", "lis_name": "TSH", "action": "dipetakan" }
+```
+
+`action`: `dipetakan` (mapping baru, `201`) atau `diganti` (`id_template`
+sudah pernah dipetakan, kode LIS-nya diganti/diaktifkan ulang, `200`).
+
+Satu `lis_code` boleh dipakai banyak `id_template` sekaligus (mis. HbA1c di
+beberapa kelas/panel Khanza, satu tes LIS, satu alat) — sengaja tidak ditolak.
+
+Error:
+
+| Status | Kapan |
+|---|---|
+| `400` | `id_template` atau `lis_code` kosong |
+| `404` `Kode LIS tidak ditemukan` | `lis_code` tidak cocok dengan `lab_tests.code` mana pun — periksa ejaan, atau buat dulu lewat `POST /test-catalog` biasa |
+
 ### DELETE `/api/bridging/test-catalog/{id_template}`
 
 - default: **hapus** baris `simrs_mappings`. `lab_tests`-nya ikut dinonaktifkan
