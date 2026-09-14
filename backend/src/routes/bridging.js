@@ -478,12 +478,13 @@ router.get('/test-catalog', async (_req, res) => {
              lt.reference_min, lt.reference_max,
              lt.reference_min_l, lt.reference_max_l, lt.reference_min_p, lt.reference_max_p,
              lt.critical_min, lt.critical_max,
-             i.name AS instrument,
+             GROUP_CONCAT(DISTINCT im.name ORDER BY im.name SEPARATOR ', ') AS instrument,
              GROUP_CONCAT(DISTINCT IF(sm.is_active, sm.simrs_field, NULL) ORDER BY sm.simrs_field) AS id_templates_aktif,
              GROUP_CONCAT(DISTINCT IF(sm.is_active, NULL, sm.simrs_field) ORDER BY sm.simrs_field) AS id_templates_nonaktif,
              (SELECT COUNT(*) FROM instrument_test_map m WHERE m.test_id = lt.id) AS instrument_links
         FROM lab_tests lt
-        LEFT JOIN instruments i ON i.id = lt.instrument_id
+        LEFT JOIN instrument_test_map itm ON itm.test_id = lt.id
+        LEFT JOIN instruments im ON im.id = itm.instrument_id
         LEFT JOIN simrs_mappings sm ON sm.lis_field = lt.code AND sm.mapping_type = 'test'
        GROUP BY lt.id
        ORDER BY lt.code`);
