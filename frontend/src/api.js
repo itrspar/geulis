@@ -160,6 +160,13 @@ export const api = {
     setSortOrder: (id, sort_order) => request(`/tests/${id}/sort-order`, { method: 'PATCH', body: JSON.stringify({ sort_order }) }),
     reorder: (orders) => request('/tests/reorder', { method: 'POST', body: JSON.stringify({ orders }) }),
   },
+  nilaiRujukan: {
+    list: (testId) => request(`/rujukan${testId ? `?test_id=${encodeURIComponent(testId)}` : ''}`),
+    create: (body) => request('/rujukan', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id, body) => request(`/rujukan/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    remove: (id) => request(`/rujukan/${id}`, { method: 'DELETE' }),
+    coba: (params) => request(`/rujukan/coba?${new URLSearchParams(params).toString()}`),
+  },
   users: {
     list: () => request('/users'),
     roles: () => request('/users/roles'),
