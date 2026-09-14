@@ -1,13 +1,27 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import rateLimit from 'express-rate-limit';
 import pool from '../config/db.js';
 import { authenticate } from '../middleware/auth.js';
 import { audit } from '../services/audit.js';
 
 const router = Router();
 
-router.post('/login', async (req, res) => {
+// Tanpa ini, password bisa ditebak berkali-kali tanpa batas dari IP mana
+// pun. 20 percobaan / 15 menit per IP -- longgar untuk salah ketik wajar,
+// cukup ketat untuk menghentikan tebak-tebakan otomatis. Dihitung per IP,
+// bukan per username, supaya satu username tidak bisa dipakai mengunci
+// akun orang lain (denial-of-service via percobaan sengaja).
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Terlalu banyak percobaan login. Coba lagi dalam beberapa menit.' },
+});
+
+router.post('/login', loginLimiter, async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: 'Username dan password wajib' });

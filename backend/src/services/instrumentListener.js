@@ -288,9 +288,6 @@ function attachSocket(inst, protocol, socket, isClient = false) {
     if (isClient && isHeartbeatOnly(str)) return;
 
     buffer += str;
-    
-    // Debug logging to see exactly what comes from Sysmex
-    import('fs').then(fs => fs.appendFileSync('/tmp/lis_debug.log', `[IN] ${JSON.stringify(str)}\n`));
 
     // Always log raw incoming message to instrument_logs so it appears in UI immediately
     const [[checkInst]] = await pool.query('SELECT id FROM instruments WHERE id = ?', [inst.id]).catch(() => [[]]);
@@ -307,10 +304,8 @@ function attachSocket(inst, protocol, socket, isClient = false) {
     if (protocol === 'astm') {
       if (str.includes('\x05')) {
         socket.write('\x06');
-        import('fs').then(fs => fs.appendFileSync('/tmp/lis_debug.log', `[OUT] ACK (ENQ)\n`));
       } else if ((str.includes('\n') || str.includes('\r')) && !str.includes('\x04')) {
         socket.write('\x06');
-        import('fs').then(fs => fs.appendFileSync('/tmp/lis_debug.log', `[OUT] ACK (Frame)\n`));
       }
     }
 
@@ -407,7 +402,6 @@ function attachSocket(inst, protocol, socket, isClient = false) {
           : buildAstmNoOrder();
         if (astmMsg) {
           socket.write(astmMsg);
-          import('fs').then(fs => fs.appendFileSync('/tmp/lis_debug.log', `[OUT] QUERY RESP:\n${astmMsg}\n`));
           await pool.query(
             'INSERT INTO instrument_logs (instrument_id, direction, raw_data, parsed_status) VALUES (?, ?, ?, ?)',
             [inst.id, 'out', astmMsg.trim(), 'ok']

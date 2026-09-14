@@ -1,4 +1,5 @@
 import express from 'express';
+import helmet from 'helmet';
 import { pasangTangkapAsync } from './tangkapAsync.js';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -58,6 +59,16 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
 
 const PORT = process.env.PORT || 3001;
 
+// Backend ini murni API JSON (halaman HTML dilayani nginx, bukan Express),
+// jadi CSP dan Cross-Origin-*-Policy tidak relevan dan malah berisiko
+// bentrok dengan CORS lintas-origin yang memang disengaja (SIMRS memanggil
+// dari server lain). Header lain (X-Content-Type-Options, X-Frame-Options,
+// dst) tetap aktif dengan nilai bawaan helmet.
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: false,
+  crossOriginEmbedderPolicy: false,
+}));
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 
