@@ -60,7 +60,7 @@ export default function Unmatched() {
       inputOptions: pilihan,
       inputPlaceholder: 'pilih satu',
       showCancelButton: true,
-      confirmButtonText: 'Cocokkan',
+      confirmButtonText: 'Lanjut',
       cancelButtonText: 'Batal',
       // Salah pilih di sini berarti hasil masuk ke rekam medis orang lain,
       // jadi pilihannya ditegaskan sekali lagi.
@@ -69,9 +69,59 @@ export default function Unmatched() {
     if (!patientId) return;
 
     const nama = pilihan[patientId];
+
+    // Tautkan ke satu PERMINTAAN spesifik milik pasien ini kalau ada yang
+    // masih terbuka -- bukan cuma ke pasiennya. Tanpa ini hasil tersimpan
+    // "yatim" (tanpa request_id), dan penjagaan di bridging SIMRS bisa
+    // menganggapnya milik order LAIN pasien yang sama di kemudian hari,
+    // walau sampel itu tidak pernah benar-benar diperiksa untuk order itu.
+    let requestId = null;
+    try {
+      const semua = await api.requests.list(undefined, undefined, undefined, undefined, patientId);
+      const terbuka = semua.filter((r) => !['completed', 'cancelled'].includes(r.status));
+      if (terbuka.length === 1) {
+        const r = terbuka[0];
+        const konfirmasiTunggal = await Swal.fire({
+          title: 'Tautkan ke permintaan ini?',
+          html: `Ada satu permintaan terbuka atas nama <b>${nama}</b>:<br>` +
+            `<b>${r.request_no}</b> · ${new Date(r.requested_at).toLocaleString('id-ID')}`,
+          icon: 'question',
+          showCancelButton: true,
+          showDenyButton: true,
+          confirmButtonText: 'Ya, tautkan',
+          denyButtonText: 'Tidak, ke pasien saja',
+          cancelButtonText: 'Batal',
+        });
+        if (konfirmasiTunggal.isDismissed) return;
+        if (konfirmasiTunggal.isConfirmed) requestId = r.id;
+      } else if (terbuka.length > 1) {
+        const pilihanReq = { '': '— Tidak ada / tautkan ke pasien saja —' };
+        terbuka.forEach((r) => {
+          pilihanReq[r.id] = `${r.request_no} · ${new Date(r.requested_at).toLocaleString('id-ID')}`;
+        });
+        const { value, isDismissed } = await Swal.fire({
+          title: 'Pilih permintaan yang sesuai tabung/sampel ini',
+          html: `Ada ${terbuka.length} permintaan terbuka atas nama <b>${nama}</b>. Pilih yang sesuai, atau tautkan ke pasien saja bila tidak ada yang cocok.`,
+          input: 'select',
+          inputOptions: pilihanReq,
+          showCancelButton: true,
+          confirmButtonText: 'Lanjut',
+          cancelButtonText: 'Batal',
+        });
+        if (isDismissed) return;
+        if (value) requestId = Number(value);
+      }
+      // terbuka.length === 0: tidak ada permintaan terbuka, lanjut ke pasien saja tanpa tanya.
+    } catch (e) {
+      // Gagal memuat daftar permintaan tidak boleh menghentikan pencocokan --
+      // staf masih bisa lanjut menautkan ke pasien saja.
+      console.error(e);
+    }
+
     const tegas = await Swal.fire({
       title: 'Sudah yakin?',
-      html: `${baris.jumlah_parameter} hasil dari sampel <b>${baris.sample_id}</b> akan dicatat atas nama:<br><b>${nama}</b>`,
+      html: `${baris.jumlah_parameter} hasil dari sampel <b>${baris.sample_id}</b> akan dicatat atas nama:<br><b>${nama}</b>` +
+        (requestId ? `<br>ditautkan ke permintaan terpilih.` : `<br><i>tidak ditautkan ke permintaan mana pun.</i>`),
       icon: 'warning',
       showCancelButton: true,
       confirmButtonText: 'Ya, catat',
@@ -80,8 +130,8 @@ export default function Unmatched() {
     if (!tegas.isConfirmed) return;
 
     try {
-      const out = await api.unmatched.match(baris.id, Number(patientId));
-      await Swal.fire('Tercatat', `${out.tersimpan} hasil masuk ke ${nama}.`, 'success');
+      const out = await api.unmatched.match(baris.id, Number(patientId), requestId);
+      await Swal.fire('Tercatat', `${out.tersimpan} hasil masuk ke ${nama}${out.tertaut ? ` (${out.tertaut} tertaut ke permintaan)` : ''}.`, 'success');
       muat();
     } catch (e) {
       Swal.fire('Gagal', e.message, 'error');
@@ -153,7 +203,9 @@ export default function Unmatched() {
                       <button className="btn-sm secondary" onClick={() => buang(b)}>Buang</button>
                     </>
                   ) : (
-                    b.matched_patient_name || b.note || '-'
+                    b.matched_patient_name
+                      ? `${b.matched_patient_name}${b.matched_request_no ? ` · ${b.matched_request_no}` : ' · tidak ditautkan ke permintaan'}`
+                      : b.note || '-'
                   )}
                 </td>
               </tr>

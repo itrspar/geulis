@@ -12,7 +12,8 @@ router.get('/', authenticate, requirePermission('requests.view'), async (req, re
   const startDate = req.query.start_date;
   const endDate = req.query.end_date;
   const q = req.query.q || '';
-  
+  const patientId = req.query.patient_id;
+
   let sql = `SELECT lr.*, p.name AS patient_name, p.medical_record_no, u.full_name AS requested_by_name
              FROM lab_requests lr
              JOIN patients p ON p.id = lr.patient_id
@@ -24,7 +25,15 @@ router.get('/', authenticate, requirePermission('requests.view'), async (req, re
     conditions.push('(p.name LIKE ? OR p.medical_record_no LIKE ? OR lr.request_no LIKE ?)');
     params.push(`%${q}%`, `%${q}%`, `%${q}%`);
   }
-  
+
+  // Dipakai layar "Hasil Belum Cocok" untuk menawarkan permintaan terbuka
+  // milik satu pasien tertentu -- lebih presisi daripada pencarian nama/RM
+  // yang bisa menjaring pasien lain dengan nama mirip.
+  if (patientId) {
+    conditions.push('lr.patient_id = ?');
+    params.push(patientId);
+  }
+
   if (status) {
     conditions.push('lr.status = ?');
     params.push(status);

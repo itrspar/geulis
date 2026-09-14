@@ -77,12 +77,13 @@ export const api = {
     remove: (id) => request(`/patients/${id}`, { method: 'DELETE' }),
   },
   requests: {
-    list: (q, status, startDate, endDate) => {
+    list: (q, status, startDate, endDate, patientId) => {
       const params = new URLSearchParams();
       if (q) params.append('q', q);
       if (status) params.append('status', status);
       if (startDate) params.append('start_date', startDate);
       if (endDate) params.append('end_date', endDate);
+      if (patientId) params.append('patient_id', patientId);
       return request(`/requests?${params.toString()}`);
     },
     get: (id) => request(`/requests/${id}`),
@@ -121,7 +122,7 @@ export const api = {
     list: (status = 'pending') => request(`/unmatched?status=${status}`),
     count: () => request('/unmatched/count'),
     get: (id) => request(`/unmatched/${id}`),
-    match: (id, patient_id) => request(`/unmatched/${id}/match`, { method: 'POST', body: JSON.stringify({ patient_id }) }),
+    match: (id, patient_id, request_id) => request(`/unmatched/${id}/match`, { method: 'POST', body: JSON.stringify({ patient_id, request_id }) }),
     discard: (id, note) => request(`/unmatched/${id}/discard`, { method: 'POST', body: JSON.stringify({ note }) }),
   },
   qc: {
