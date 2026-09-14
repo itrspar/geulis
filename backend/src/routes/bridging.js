@@ -4,6 +4,24 @@ import { requireApiKey, requirePermission } from '../middleware/auth.js';
 import { audit } from '../services/audit.js';
 import { genRequestNo } from '../services/requestNo.js';
 import { pushRequestResultsToSimrs } from '../services/simrsPush.js';
+import { rujukanBerlaku, labelRujukan, umurHari, kosongkanCacheRujukan } from '../services/rujukanUmur.js';
+
+// Tanda asal baris reference_ranges yang dikirim SIMRS lewat test-catalog --
+// supaya jalur bridging tidak pernah menampilkan rentang yang diisi manual
+// di LIS (menu Nilai Rujukan), dan sinkronisasi berikutnya bisa mengganti
+// SELURUH rentang milik SIMRS tanpa menyentuh entri manual LIS yang lain.
+const SUMBER_SIMRS = 'SIMRS';
+
+/** Umur dalam hari dari {nilai, satuan}. Satuan mengikuti konvensi menu
+ *  Nilai Rujukan GeuLIS sendiri (hari/bulan/tahun) -- supaya SIMRS tidak
+ *  perlu menghitung sendiri "6570 hari" untuk 18 tahun. */
+const FAKTOR_UMUR = { hari: 1, bulan: 30, tahun: 365 };
+function keHari(nilai, satuan) {
+  if (nilai === '' || nilai == null) return null;
+  const n = Number(nilai);
+  if (!Number.isFinite(n)) return null;
+  return Math.round(n * (FAKTOR_UMUR[satuan] || 365));
+}
 
 const router = Router();
 
@@ -261,15 +279,25 @@ router.get('/result/:simrs_order_id', async (req, res) => {
     // Format output
     //
     // Rentang rujukan SELALU dari nilai yang SIMRS sendiri kirim lewat
-    // POST /test-catalog (lab_tests.reference_min/max, atau varian per
-    // gender bila diisi) -- satu sumber kebenaran, supaya tidak pernah
-    // berbeda dari yang sedang dikonfigurasi SIMRS saat itu. Sengaja TIDAK
-    // memakai reference_ranges (rentang per umur ala LIS, diisi manual di
-    // GeuLIS) di jalur SIMRS ini, walau LIS memakainya di tempat lain
-    // (lembar cetak, portal pasien) -- keduanya sumber data yang berbeda,
-    // dan mencampurnya di sini berarti SIMRS bisa menampilkan rentang yang
-    // tidak pernah ia atur sendiri.
-    const formattedResults = resultRows.map((r) => {
+    // POST /test-catalog -- satu sumber kebenaran, supaya tidak pernah
+    // berbeda dari yang sedang dikonfigurasi SIMRS saat itu. Dua bentuk yang
+    // SIMRS boleh kirim, dicoba berurutan:
+    //   1. Rentang bertingkat (reference_ranges bertanda SUMBER_SIMRS) --
+    //      dipilih menurut umur & gender pasien SAAT INI. Ini yang dipakai
+    //      kalau satu tes (mis. T3) beda nilai untuk anak vs dewasa, bukan
+    //      cuma beda gender.
+    //   2. Kalau tidak ada yang cocok, jatuh ke kolom rata lab_tests
+    //      (reference_min/max, atau varian per gender).
+    // TIDAK PERNAH memakai reference_ranges bertanda LAIN (entri manual di
+    // menu Nilai Rujukan GeuLIS) -- itu punya LIS, bukan SIMRS, dan
+    // menampilkannya di sini berarti SIMRS menunjukkan rentang yang tidak
+    // pernah ia atur sendiri.
+    const konteksPasien = {
+      gender: requestData.gender || null,
+      umurHari: umurHari(requestData.birth_date),
+      kondisi: null,
+    };
+    const formattedResults = await Promise.all(resultRows.map(async (r) => {
       const hasValue = r.result_value != null && r.result_value !== '';
       const verified = r.status === 'final' || r.status === 'corrected';
       // Kritis/abnormal/delta mencurigakan yang belum dilaporkan (critical_ack)
@@ -278,16 +306,22 @@ router.get('/result/:simrs_order_id', async (req, res) => {
       // input pelaporan itu di muka, bukan menunggu 400 dari server dulu.
       const perluLaporan = ['critical', 'abnormal'].includes(r.flag) || r.delta_flag === 'check';
 
-      let min = r.reference_min;
-      let max = r.reference_max;
-      if (requestData.gender === 'L' && (r.reference_min_l != null || r.reference_max_l != null)) {
-        min = r.reference_min_l ?? min;
-        max = r.reference_max_l ?? max;
-      } else if (requestData.gender === 'P' && (r.reference_min_p != null || r.reference_max_p != null)) {
-        min = r.reference_min_p ?? min;
-        max = r.reference_max_p ?? max;
+      let reference = null;
+      const rj = await rujukanBerlaku({ id: r.test_id }, konteksPasien, { sumber: SUMBER_SIMRS });
+      if (rj.sumber === 'rentang') {
+        reference = labelRujukan(rj);
+      } else {
+        let min = r.reference_min;
+        let max = r.reference_max;
+        if (requestData.gender === 'L' && (r.reference_min_l != null || r.reference_max_l != null)) {
+          min = r.reference_min_l ?? min;
+          max = r.reference_max_l ?? max;
+        } else if (requestData.gender === 'P' && (r.reference_min_p != null || r.reference_max_p != null)) {
+          min = r.reference_min_p ?? min;
+          max = r.reference_max_p ?? max;
+        }
+        reference = min != null || max != null ? `${min ?? ''} - ${max ?? ''}` : null;
       }
-      const reference = min != null || max != null ? `${min ?? ''} - ${max ?? ''}` : null;
 
       return {
         result_id: r.result_id || null,
@@ -303,7 +337,7 @@ router.get('/result/:simrs_order_id', async (req, res) => {
         status: hasValue ? (verified ? 'completed' : 'preliminary') : 'pending',
         needs_report_before_verify: !verified && hasValue && perluLaporan && !r.critical_ack,
       };
-    });
+    }));
 
     res.json({
       simrs_order_id: requestData.simrs_order_id,
@@ -440,7 +474,7 @@ async function buatKodeLis(nama, conn) {
 router.get('/test-catalog', async (_req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT lt.code AS lis_code, lt.name, lt.unit, lt.is_active,
+      SELECT lt.id, lt.code AS lis_code, lt.name, lt.unit, lt.is_active,
              lt.reference_min, lt.reference_max,
              lt.reference_min_l, lt.reference_max_l, lt.reference_min_p, lt.reference_max_p,
              lt.critical_min, lt.critical_max,
@@ -453,6 +487,26 @@ router.get('/test-catalog', async (_req, res) => {
         LEFT JOIN simrs_mappings sm ON sm.lis_field = lt.code AND sm.mapping_type = 'test'
        GROUP BY lt.id
        ORDER BY lt.code`);
+
+    // Rentang bertingkat milik SIMRS (lihat POST /test-catalog), dikelompokkan
+    // per tes -- supaya SIMRS bisa rekonsiliasi apa yang tersimpan tanpa
+    // menebak-nebak dari sisi lain.
+    const [rrRows] = await pool.query(
+      `SELECT test_id, gender, umur_min_hari, umur_max_hari, kondisi, label, ref_min, ref_max, critical_min, critical_max
+         FROM reference_ranges WHERE sumber = ? AND is_active = 1 ORDER BY test_id, id`,
+      [SUMBER_SIMRS]
+    );
+    const rrPerTest = new Map();
+    for (const rr of rrRows) {
+      if (!rrPerTest.has(rr.test_id)) rrPerTest.set(rr.test_id, []);
+      rrPerTest.get(rr.test_id).push({
+        label: rr.label, gender: rr.gender,
+        umur_min_hari: rr.umur_min_hari, umur_max_hari: rr.umur_max_hari,
+        kondisi: rr.kondisi, ref_min: rr.ref_min, ref_max: rr.ref_max,
+        critical_min: rr.critical_min, critical_max: rr.critical_max,
+      });
+    }
+
     res.json({
       tests: rows.map((r) => ({
         lis_code: r.lis_code,
@@ -466,6 +520,7 @@ router.get('/test-catalog', async (_req, res) => {
           min_l: r.reference_min_l, max_l: r.reference_max_l,
           min_p: r.reference_min_p, max_p: r.reference_max_p,
         },
+        reference_ranges: rrPerTest.get(r.id) || [],
         critical: { min: r.critical_min, max: r.critical_max },
         mapped_id_templates: r.id_templates_aktif ? r.id_templates_aktif.split(',') : [],
         mapped_id_templates_nonaktif: r.id_templates_nonaktif ? r.id_templates_nonaktif.split(',') : [],
@@ -508,6 +563,7 @@ router.post('/test-catalog', async (req, res) => {
 
       let lisCode;
       let action;
+      let testId;
       if (mapAda) {
         lisCode = mapAda.lis_field;
         const [[lt]] = await conn.query('SELECT id, instrument_id FROM lab_tests WHERE code = ?', [lisCode]);
@@ -518,14 +574,16 @@ router.post('/test-catalog', async (req, res) => {
             [nama, t.unit ?? null, ...REF_COLS.map((c) => ref[c]), lt.id]
           );
           action = 'updated';
+          testId = lt.id;
         } else {
           // mapping menunjuk kode yang lab_tests-nya sudah hilang -> buat ulang
-          await conn.query(
+          const [ins] = await conn.query(
             `INSERT INTO lab_tests (code, name, unit, ${REF_COLS.join(', ')}, is_active, show_in_report, sort_order)
              VALUES (?, ?, ?, ${REF_COLS.map(() => '?').join(', ')}, 1, 1, 999)`,
             [lisCode, nama, t.unit ?? null, ...REF_COLS.map((c) => ref[c])]
           );
           action = 'recreated';
+          testId = ins.insertId;
         }
         await conn.query('UPDATE simrs_mappings SET is_active=1 WHERE id=?', [mapAda.id]);
       } else {
@@ -541,20 +599,49 @@ router.post('/test-catalog', async (req, res) => {
             [nama, t.unit ?? null, ...REF_COLS.map((c) => ref[c]), kodeAda.id]
           );
           action = 'linked';
+          testId = kodeAda.id;
         } else {
           lisCode = await buatKodeLis(nama, conn);
-          await conn.query(
+          const [ins] = await conn.query(
             `INSERT INTO lab_tests (code, name, unit, ${REF_COLS.join(', ')}, is_active, show_in_report, sort_order)
              VALUES (?, ?, ?, ${REF_COLS.map(() => '?').join(', ')}, 1, 1, 999)`,
             [lisCode, nama, t.unit ?? null, ...REF_COLS.map((c) => ref[c])]
           );
           action = 'created';
+          testId = ins.insertId;
         }
         await conn.query(
           "INSERT INTO simrs_mappings (mapping_type, lis_field, simrs_field, is_active) VALUES ('test', ?, ?, 1)",
           [lisCode, idTemplate]
         );
       }
+
+      // Rentang bertingkat (umur/gender/kondisi) -- opsional. Dipakai untuk
+      // kasus yang 3 kolom rata (umum/L/P) tidak bisa mewakili, mis. T3 yang
+      // berbeda untuk anak laki-laki vs laki-laki dewasa (bukan cuma beda
+      // gender, tapi beda gender DAN umur sekaligus). Setiap sinkron
+      // MENGGANTI SELURUH rentang bertanda SIMRS milik tes ini -- entri
+      // manual LIS (sumber lain) tidak tersentuh. Field ini opsional: tes
+      // yang tidak mengirimkannya berperilaku persis seperti sebelumnya.
+      if (Array.isArray(t.reference_ranges)) {
+        await conn.query('DELETE FROM reference_ranges WHERE test_id = ? AND sumber = ?', [testId, SUMBER_SIMRS]);
+        for (const rr of t.reference_ranges) {
+          const uMin = keHari(rr.umur_min_nilai, rr.umur_min_satuan);
+          const uMax = keHari(rr.umur_max_nilai, rr.umur_max_satuan);
+          const label = String(rr.label || '').trim() ||
+            [rr.gender === 'L' ? 'Laki-laki' : rr.gender === 'P' ? 'Perempuan' : 'Umum', rr.kondisi || '']
+              .filter(Boolean).join(' ');
+          await conn.query(
+            `INSERT INTO reference_ranges
+               (test_id, gender, umur_min_hari, umur_max_hari, kondisi, label, ref_min, ref_max, critical_min, critical_max, sumber, is_active)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+            [testId, rr.gender || null, uMin, uMax, rr.kondisi || null, label,
+              rr.ref_min ?? null, rr.ref_max ?? null, rr.critical_min ?? null, rr.critical_max ?? null, SUMBER_SIMRS]
+          );
+        }
+        kosongkanCacheRujukan(testId);
+      }
+
       hasil.push({ id_template: idTemplate, lis_code: lisCode, action, warnings });
     }
     await conn.commit();

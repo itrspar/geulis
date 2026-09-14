@@ -304,6 +304,7 @@ yang termapping, mana yang terhubung alat.
       "lis_code": "pH", "name": "pH", "unit": "",
       "is_active": true, "instrument": "EDAN i15 Blood Gas", "instrument_linked": true,
       "reference": { "min": 7.35, "max": 7.45, "min_l": null, "max_l": null, "min_p": null, "max_p": null },
+      "reference_ranges": [],
       "critical": { "min": null, "max": null },
       "mapped_id_templates": ["9001"],
       "mapped_id_templates_nonaktif": []
@@ -311,6 +312,11 @@ yang termapping, mana yang terhubung alat.
   ]
 }
 ```
+
+`reference_ranges` (bisa kosong) berisi rentang bertingkat milik SIMRS untuk
+tes ini — lihat `POST /test-catalog` di bawah. `umur_min_hari`/`umur_max_hari`
+dikembalikan dalam hari (presisi, tidak ambigu) meski dikirim dalam
+tahun/bulan.
 
 ### POST `/api/bridging/test-catalog`
 
@@ -345,6 +351,50 @@ lab_tests-nya hilang), `skipped` (`id_template`/`name` kosong).
 
 `lis_code` **selalu ditentukan GeuLIS** — SIMRS simpan nilai balasannya. Nilai
 kritis dan tautan alat tidak pernah diterima dari sini.
+
+**Rentang bertingkat (umur + gender), untuk tes yang 3 kolom rata tidak
+cukup** — mis. T3 yang beda nilai untuk anak laki-laki vs laki-laki dewasa
+(dua sumbu sekaligus: gender DAN umur, bukan cuma gender). Tambahkan field
+opsional `reference_ranges` (array) di tiap tes:
+
+```json
+{
+  "id_template": "3766",
+  "name": "T3",
+  "unit": "ng/dL",
+  "reference_ranges": [
+    { "label": "Anak Laki-laki", "gender": "L",
+      "umur_max_nilai": 18, "umur_max_satuan": "tahun",
+      "ref_min": 1.0, "ref_max": 2.6 },
+    { "label": "Laki-laki Dewasa", "gender": "L",
+      "umur_min_nilai": 18, "umur_min_satuan": "tahun",
+      "ref_min": 0.8, "ref_max": 2.0 },
+    { "label": "Perempuan Dewasa", "gender": "P",
+      "umur_min_nilai": 18, "umur_min_satuan": "tahun",
+      "ref_min": 0.8, "ref_max": 2.1 }
+  ]
+}
+```
+
+Per entri: `label` (dicetak & dikembalikan apa adanya di `GET /result`,
+opsional — kalau kosong GeuLIS menyusun dari gender+kondisi), `gender`
+(`L`/`P`/kosongkan untuk berlaku semua gender), `umur_min_nilai`/
+`umur_max_nilai` + `umur_min_satuan`/`umur_max_satuan` (`hari`/`bulan`/
+`tahun`, default `tahun`; kosongkan salah satu untuk tanpa batas), `kondisi`
+(teks bebas, mis. `"hamil"`), `ref_min`, `ref_max`, `critical_min`,
+`critical_max` (dua yang terakhir opsional).
+
+Setiap sinkron **mengganti seluruh** `reference_ranges` bertanda SIMRS milik
+tes tersebut — kirim daftar lengkap tiap kali, bukan hanya yang berubah.
+Entri manual yang diisi lab lewat menu Nilai Rujukan GeuLIS tidak tersentuh
+sama sekali oleh field ini. Tes yang tidak mengirim `reference_ranges` (atau
+mengirim array kosong) berperilaku persis seperti sebelumnya — hanya kolom
+rata (`reference_min`/`_max`, `_l`, `_p`) yang dipakai.
+
+`GET /result` memilih entri yang berlaku untuk pasien memakai umur & gender
+pasien SAAT ITU (aturan kekhususan: kondisi > gender > umur — gabungan
+menang atas satu saja), lalu mengembalikan `label`-nya apa adanya sebagai
+`reference`. Kalau tidak ada yang cocok, jatuh ke kolom rata seperti biasa.
 
 ### POST `/api/bridging/test-catalog/map`
 

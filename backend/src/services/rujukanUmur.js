@@ -95,28 +95,36 @@ export function pilihRujukan(daftar, konteks) {
 // Rujukan jarang berubah tetapi dibaca pada setiap hasil yang masuk. Cache
 // pendek: cukup untuk satu rentetan hasil dari alat, cukup singkat supaya
 // perubahan di layar terasa hampir seketika.
+//
+// Kunci cache menyertakan filter sumber supaya permintaan "hanya milik
+// SIMRS" (dipakai bridging.js, lihat catatan di rujukanBerlaku) tidak
+// tercampur dengan permintaan biasa (dipakai flags.js, lembar cetak, dsb
+// yang boleh melihat SEMUA rentang apa pun asalnya).
 const CACHE_MS = 30_000;
 const cache = new Map();
 
 export function kosongkanCacheRujukan(testId = null) {
   if (testId == null) cache.clear();
-  else cache.delete(Number(testId));
+  else for (const k of [...cache.keys()]) if (k.startsWith(`${Number(testId)}:`)) cache.delete(k);
 }
 
-async function muatRentang(testId) {
-  const kunci = Number(testId);
+async function muatRentang(testId, sumber = null) {
+  const kunci = `${Number(testId)}:${sumber || ''}`;
   const kini = Date.now();
   const tersimpan = cache.get(kunci);
   if (tersimpan && kini - tersimpan.pada < CACHE_MS) return tersimpan.baris;
 
-  const [baris] = await pool.query(
-    `SELECT id, gender, umur_min_hari, umur_max_hari, kondisi, label,
-            ref_min, ref_max, critical_min, critical_max
-       FROM reference_ranges
-      WHERE test_id = ? AND is_active = 1
-      ORDER BY id`,
-    [kunci]
-  ).catch(() => [[]]);
+  let sql = `SELECT id, gender, umur_min_hari, umur_max_hari, kondisi, label,
+                    ref_min, ref_max, critical_min, critical_max
+               FROM reference_ranges
+              WHERE test_id = ? AND is_active = 1`;
+  const params = [Number(testId)];
+  if (sumber) {
+    sql += ' AND sumber = ?';
+    params.push(sumber);
+  }
+  sql += ' ORDER BY id';
+  const [baris] = await pool.query(sql, params).catch(() => [[]]);
 
   cache.set(kunci, { pada: kini, baris: baris || [] });
   return baris || [];
@@ -130,7 +138,7 @@ async function muatRentang(testId) {
  * dipertahankan supaya katalog yang sudah terisi tetap bekerja tanpa harus
  * dipindahkan lebih dulu.
  */
-export async function rujukanBerlaku(test, konteks = {}) {
+export async function rujukanBerlaku(test, konteks = {}, opsi = {}) {
   const k = {
     gender: konteks.gender ?? null,
     umurHari: konteks.umurHari ?? null,
@@ -138,7 +146,11 @@ export async function rujukanBerlaku(test, konteks = {}) {
   };
 
   if (test?.id != null) {
-    const daftar = await muatRentang(test.id);
+    // opsi.sumber: batasi ke rentang bertanda asal tertentu (mis. 'SIMRS' --
+    // dipakai bridging.js supaya jalur SIMRS tidak pernah menampilkan rentang
+    // yang diisi manual di LIS, konsisten dengan "satu sumber kebenaran").
+    // Kosongkan (default) untuk melihat semua rentang apa pun asalnya.
+    const daftar = await muatRentang(test.id, opsi.sumber || null);
     const r = pilihRujukan(daftar, k);
     if (r) {
       return {
