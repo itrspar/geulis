@@ -94,7 +94,13 @@ export const api = {
   },
   results: {
       verifyBatch: (body) => request('/results/verify-batch', { method: 'POST', body: JSON.stringify(body) }),
-    list: (patientId) => request(`/results${patientId ? `?patient_id=${patientId}` : ''}`),
+    list: (patientId, requestId) => {
+      const params = new URLSearchParams();
+      if (patientId) params.append('patient_id', patientId);
+      if (requestId) params.append('request_id', requestId);
+      const qs = params.toString();
+      return request(`/results${qs ? `?${qs}` : ''}`);
+    },
     groups: (q, startDate, endDate) => {
       const params = new URLSearchParams();
       if (q) params.append('q', q);

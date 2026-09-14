@@ -121,11 +121,21 @@ router.get('/', authenticate, requirePermission('results.view'), async (req, res
              LEFT JOIN users vu ON vu.id = res.verified_by
              LEFT JOIN users cu ON cu.id = res.corrected_by
              LEFT JOIN lab_requests lr ON lr.id = res.request_id`;
+  const requestId = req.query.request_id;
   const params = [];
+  const kondisi = [];
   if (patientId) {
-    sql += ' WHERE res.patient_id = ?';
+    kondisi.push('res.patient_id = ?');
     params.push(patientId);
   }
+  // Dipakai ReportModal untuk mencetak SATU order -- tanpa ini, pasien yang
+  // punya lebih dari satu order (mis. AGD berkali-kali) bisa mencetak hasil
+  // order lain ikut tercampur di lembar hasil order yang sedang dicetak.
+  if (requestId) {
+    kondisi.push('res.request_id = ?');
+    params.push(requestId);
+  }
+  if (kondisi.length) sql += ' WHERE ' + kondisi.join(' AND ');
   sql += ' ORDER BY res.result_at DESC LIMIT 200';
   const [rows] = await pool.query(sql, params);
   res.json(rows);

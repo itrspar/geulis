@@ -14,7 +14,8 @@ router.get('/', authenticate, requirePermission('requests.view'), async (req, re
   const q = req.query.q || '';
   const patientId = req.query.patient_id;
 
-  let sql = `SELECT lr.*, p.name AS patient_name, p.medical_record_no, u.full_name AS requested_by_name
+  let sql = `SELECT lr.*, p.name AS patient_name, p.medical_record_no, p.gender, p.birth_date,
+                    u.full_name AS requested_by_name
              FROM lab_requests lr
              JOIN patients p ON p.id = lr.patient_id
              LEFT JOIN users u ON u.id = lr.requested_by`;

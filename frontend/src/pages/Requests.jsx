@@ -287,10 +287,19 @@ export default function Requests() {
       </div>
 
       {reportData && (
-        <ReportModal 
-          patient={{ id: reportData.patient_id, name: reportData.patient_name, medical_record_no: reportData.medical_record_no }} 
-          requestId={reportData.id} 
-          onClose={() => setReportData(null)} 
+        <ReportModal
+          patient={{
+            id: reportData.patient_id,
+            name: reportData.patient_name,
+            medical_record_no: reportData.medical_record_no,
+            gender: reportData.gender,
+            birth_date: reportData.birth_date,
+            // Nomor order permintaan INI, bukan nomor umum milik pasien --
+            // satu pasien bisa punya banyak order berbeda dari SIMRS.
+            order_no: reportData.simrs_order_id,
+          }}
+          requestId={reportData.id}
+          onClose={() => setReportData(null)}
         />
       )}
       

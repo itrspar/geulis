@@ -56,7 +56,7 @@ export default function ReportModal({ patient, requestId, onClose }) {
     
     if (patient) {
       setLoading(true);
-      api.results.list(patient.id)
+      api.results.list(patient.id, requestId)
         .then((res) => {
            const visibleResults = res.filter(r => r.show_in_report !== 0 && r.is_printable !== 0);
            const sortedResults = [...visibleResults].sort((a, b) => {
