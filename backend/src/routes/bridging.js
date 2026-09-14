@@ -81,6 +81,12 @@ router.post('/order', async (req, res) => {
     clinician_unit,
     specimen_type,
     collected_at,
+    // Waktu permintaan yang SEBENARNYA dicatat di Khanza -- bisa lebih awal
+    // dari saat panggilan ini benar-benar sampai ke GeuLIS (jeda jaringan,
+    // atau "Kirim ke GeuLIS" ditekan belakangan). Tanpa ini, requested_at
+    // selalu berarti "saat POST /order diproses", bukan saat dokter
+    // sungguh meminta -- keliru untuk perhitungan TAT dan lembar cetak.
+    requested_at,
     tests // Array of test codes, e.g. ["HGB", "LEU"]
   } = req.body;
 
@@ -162,12 +168,16 @@ router.post('/order', async (req, res) => {
     // akurat daripada yang sudah dikirim SIMRS.
     const request_no = genRequestNo();
     const statusAwal = collected_at ? 'collected' : 'pending';
+    // requested_at TIDAK NULL-kan kolomnya -- kalau SIMRS tidak mengirim,
+    // pakai waktu sekarang persis seperti perilaku lama (DEFAULT
+    // CURRENT_TIMESTAMP), bukan NULL.
+    const requestedAtValue = requested_at || new Date();
     const [reqResult] = await conn.query(
       `INSERT INTO lab_requests (request_no, patient_id, simrs_order_id, priority, notes, requested_by, status,
-                                 clinician_name, clinician_unit, specimen_type, collected_at, received_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+                                 clinician_name, clinician_unit, specimen_type, collected_at, requested_at, received_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [request_no, patientId, simrs_order_id, priority, notes || null, req.apiKeyData.created_by, statusAwal,
-       clinician_name || null, clinician_unit || null, specimen_type || null, collected_at || null]
+       clinician_name || null, clinician_unit || null, specimen_type || null, collected_at || null, requestedAtValue]
     );
     const requestId = reqResult.insertId;
 

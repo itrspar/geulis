@@ -133,6 +133,7 @@ Header: `x-api-key: <API key>`
   "clinician_name": "dr. Andi",
   "clinician_unit": "Poli Umum",
   "specimen_type": "Serum",
+  "requested_at": "2026-09-03 08:10:00",
   "collected_at": "2026-09-03 08:15:00",
   "tests": ["12", "15", "18"]
 }
@@ -145,6 +146,14 @@ permintaan di GeuLIS langsung `collected` (bukan `pending`) — petugas lab
 tidak perlu lagi klik "Ambil Sampel" secara manual, dan kolom "Diambil" di
 lembar hasil cetak (wajib PMK 43/2013 Bab IX) terisi otomatis dengan waktu
 yang akurat, bukan waktu petugas kebetulan membuka GeuLIS.
+
+`requested_at` opsional juga — waktu permintaan yang sebenarnya dicatat di
+Khanza (kolom "Permintaan" + "Jam" di rekap Khanza), yang bisa lebih awal
+dari saat panggilan `POST /order` ini benar-benar sampai ke GeuLIS. Kalau
+tidak dikirim, GeuLIS memakai waktu saat itu juga (perilaku lama, tidak
+berubah). `received_at` (kapan GeuLIS benar-benar menerima panggilan ini)
+selalu diisi otomatis oleh GeuLIS sendiri — bukan dari SIMRS — karena itu
+memang waktu sebenarnya spesimen sampai ke tangan lab.
 
 Balasan `201`:
 
