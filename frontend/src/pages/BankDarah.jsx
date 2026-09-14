@@ -123,11 +123,11 @@ function Reaksi() {
   );
 }
 
-function L({ t, children }) { return <div style={{ marginTop: '.4rem' }}><label style={{ display: 'block', fontSize: '.8rem', color: '#556' }}>{t}</label>{children}</div>; }
+function L({ t, children }) { return <div style={{ marginTop: '.4rem' }}><label style={{ display: 'block', fontSize: '.8rem', color: 'var(--muted)' }}>{t}</label>{children}</div>; }
 function Modal({ judul, children, onTutup, onSimpan, galat }) {
   return <div onClick={onTutup} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'grid', placeItems: 'center', zIndex: 50 }}>
-    <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', padding: '1.4rem', borderRadius: 8, minWidth: '26rem', maxHeight: '90vh', overflowY: 'auto' }}>
-      <h3>{judul}</h3>{galat && <p style={{ color: '#b93a25' }}>{galat}</p>}{children}
+    <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--surface)', color: 'var(--text)', padding: '1.4rem', borderRadius: 8, minWidth: '26rem', maxHeight: '90vh', overflowY: 'auto' }}>
+      <h3>{judul}</h3>{galat && <p style={{ color: 'var(--danger)' }}>{galat}</p>}{children}
       <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end', gap: '.5rem' }}>
         <button onClick={onTutup} style={{ background: '#889' }}>Batal</button><button onClick={onSimpan}>Simpan</button></div>
     </div></div>;

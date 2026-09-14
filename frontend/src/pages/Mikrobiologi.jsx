@@ -19,7 +19,7 @@ export default function Mikrobiologi() {
         {pilih && <Detail id={pilih} onUbah={muat} />}
       </div>
       {buka && <div onClick={() => setBuka(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'grid', placeItems: 'center', zIndex: 50 }}>
-        <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', padding: '1.4rem', borderRadius: 8, minWidth: '24rem' }}>
+        <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--surface)', color: 'var(--text)', padding: '1.4rem', borderRadius: 8, minWidth: '24rem' }}>
           <h3>Kultur Baru</h3>
           <div><label style={{ fontSize: '.8rem' }}>Nama Pasien</label><input value={f.namaPasien || ''} onChange={(e) => setF({ ...f, namaPasien: e.target.value })} style={{ display: 'block', width: '100%' }} /></div>
           <div style={{ display: 'flex', gap: '.5rem', marginTop: '.4rem' }}>

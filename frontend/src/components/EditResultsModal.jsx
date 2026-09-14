@@ -86,12 +86,12 @@ export default function EditResultsModal({ patient, onClose }) {
           z-index: 1000; overflow-y: auto; padding: 2rem 0;
         }
         .modal-content {
-          background: white; border-radius: 8px; padding: 2rem;
-          box-shadow: 0 10px 25px rgba(0,0,0,0.2); color: #333;
+          background: var(--surface); border-radius: 8px; padding: 2rem;
+          box-shadow: 0 10px 25px rgba(0,0,0,0.4); color: var(--text);
         }
         .modal-header {
           display: flex; justify-content: space-between; align-items: center;
-          margin-bottom: 1rem; border-bottom: 1px solid #ddd; padding-bottom: 1rem;
+          margin-bottom: 1rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem;
         }
       `}</style>
     </div>
