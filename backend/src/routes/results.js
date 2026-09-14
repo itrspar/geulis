@@ -61,11 +61,11 @@ router.get('/groups', authenticate, requirePermission('results.view'), async (re
   let sql = `
     SELECT p.id as patient_id, p.name as patient_name, p.medical_record_no,
            p.gender, p.birth_date, p.order_no,
-           COALESCE(req.request_no, (
+           (
              SELECT r.request_no FROM lab_requests r
              WHERE r.patient_id = p.id AND DATE(r.requested_at) = DATE(res.result_at)
              ORDER BY r.requested_at DESC LIMIT 1
-           )) as request_no,
+           ) as request_no,
            DATE(res.result_at) as exam_date,
            MAX(res.result_at) as latest_result_at,
            SUM(res.status = 'preliminary') AS pending_verify,
@@ -73,8 +73,6 @@ router.get('/groups', authenticate, requirePermission('results.view'), async (re
            COUNT(*) AS total_results
     FROM lab_results res
     JOIN patients p ON p.id = res.patient_id
-    LEFT JOIN lab_request_items req_items ON req_items.id = res.request_item_id
-    LEFT JOIN lab_requests req ON req.id = req_items.request_id
     WHERE (p.name LIKE ? OR p.medical_record_no LIKE ?)
   `;
   const params = [`%${q}%`, `%${q}%`];
@@ -91,7 +89,7 @@ router.get('/groups', authenticate, requirePermission('results.view'), async (re
   }
 
   sql += `
-    GROUP BY p.id, p.name, p.medical_record_no, p.gender, p.birth_date, p.order_no, DATE(res.result_at), req.request_no
+    GROUP BY p.id, p.name, p.medical_record_no, p.gender, p.birth_date, p.order_no, DATE(res.result_at)
     ORDER BY latest_result_at DESC
     LIMIT 50
   `;
