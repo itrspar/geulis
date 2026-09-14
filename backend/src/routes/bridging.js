@@ -152,12 +152,21 @@ router.post('/order', async (req, res) => {
     }
 
     // 4. Buat Permintaan
+    //
+    // Kalau SIMRS sudah mengirim collected_at (mis. Khanza baru memanggil
+    // /order setelah spesimen benar-benar diambil), status permintaan
+    // langsung 'collected' -- bukan 'pending'. Tanpa ini, tombol "Ambil
+    // Sampel" di GeuLIS tetap tampil padahal spesimennya jelas sudah diambil
+    // (waktunya bahkan sudah tercatat), dan kalau diklik nanti waktu
+    // pengambilan yang tersimpan malah tertimpa "sekarang" -- lebih tidak
+    // akurat daripada yang sudah dikirim SIMRS.
     const request_no = genRequestNo();
+    const statusAwal = collected_at ? 'collected' : 'pending';
     const [reqResult] = await conn.query(
       `INSERT INTO lab_requests (request_no, patient_id, simrs_order_id, priority, notes, requested_by, status,
                                  clinician_name, clinician_unit, specimen_type, collected_at, received_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, NOW())`,
-      [request_no, patientId, simrs_order_id, priority, notes || null, req.apiKeyData.created_by,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [request_no, patientId, simrs_order_id, priority, notes || null, req.apiKeyData.created_by, statusAwal,
        clinician_name || null, clinician_unit || null, specimen_type || null, collected_at || null]
     );
     const requestId = reqResult.insertId;

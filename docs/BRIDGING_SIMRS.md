@@ -130,9 +130,21 @@ Header: `x-api-key: <API key>`
   "birth_date": "1990-01-01",
   "priority": "normal",
   "notes": "[ralan] Poli Umum - dr. Andi - Anemia",
+  "clinician_name": "dr. Andi",
+  "clinician_unit": "Poli Umum",
+  "specimen_type": "Serum",
+  "collected_at": "2026-09-03 08:15:00",
   "tests": ["12", "15", "18"]
 }
 ```
+
+`collected_at` opsional, tapi **sangat dianjurkan**: kirim hanya setelah
+spesimen benar-benar diambil (bukan saat order dibuat di layar dokter),
+dengan waktu pengambilan yang sebenarnya dari ruangan. Kalau diisi, status
+permintaan di GeuLIS langsung `collected` (bukan `pending`) — petugas lab
+tidak perlu lagi klik "Ambil Sampel" secara manual, dan kolom "Diambil" di
+lembar hasil cetak (wajib PMK 43/2013 Bab IX) terisi otomatis dengan waktu
+yang akurat, bukan waktu petugas kebetulan membuka GeuLIS.
 
 Balasan `201`:
 
