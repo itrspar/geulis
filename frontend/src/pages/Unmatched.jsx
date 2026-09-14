@@ -138,6 +138,42 @@ export default function Unmatched() {
     }
   };
 
+  // Petugas perlu tahu ISI hasilnya sebelum memutuskan cocokkan ke pasien
+  // mana atau buang sama sekali -- kolom "Parameter" sebelumnya cuma
+  // menunjukkan jumlahnya, bukan nilainya.
+  const lihatHasil = async (baris) => {
+    try {
+      const detail = await api.unmatched.get(baris.id);
+      const payload = typeof detail.payload === 'string' ? JSON.parse(detail.payload) : detail.payload || [];
+      const baris_html = payload.length
+        ? payload.map((p) => `
+            <tr>
+              <td style="padding:.3rem .6rem; text-align:left; border-bottom:1px solid var(--border)"><code>${p.test_code ?? '-'}</code></td>
+              <td style="padding:.3rem .6rem; text-align:right; border-bottom:1px solid var(--border)">${p.value ?? '-'}</td>
+              <td style="padding:.3rem .6rem; text-align:left; border-bottom:1px solid var(--border); color:var(--muted)">${p.unit ?? ''}</td>
+            </tr>`).join('')
+        : `<tr><td colspan="3" style="padding:.5rem; color:var(--muted)">Tidak ada parameter.</td></tr>`;
+      Swal.fire({
+        title: `Sampel ${baris.sample_id}`,
+        width: 480,
+        html: `
+          <table style="width:100%; font-size:.9rem">
+            <thead>
+              <tr>
+                <th style="text-align:left; padding:.3rem .6rem">Kode</th>
+                <th style="text-align:right; padding:.3rem .6rem">Nilai</th>
+                <th style="text-align:left; padding:.3rem .6rem">Satuan</th>
+              </tr>
+            </thead>
+            <tbody>${baris_html}</tbody>
+          </table>`,
+        confirmButtonText: 'Tutup',
+      });
+    } catch (e) {
+      Swal.fire('Gagal', e.message, 'error');
+    }
+  };
+
   const buang = async (baris) => {
     const { value: alasan, isConfirmed } = await Swal.fire({
       title: `Buang sampel ${baris.sample_id}?`,
@@ -195,7 +231,11 @@ export default function Unmatched() {
                 <td><b>{b.sample_id}</b></td>
                 <td>{b.instrument_code || '-'}</td>
                 <td>{b.patient_info?.name || <i>tidak dikirim alat</i>}</td>
-                <td>{b.jumlah_parameter}</td>
+                <td>
+                  <button className="btn-sm secondary" onClick={() => lihatHasil(b)} title="Lihat nilai hasilnya">
+                    👁️ {b.jumlah_parameter}
+                  </button>
+                </td>
                 <td>
                   {status === 'pending' ? (
                     <>
