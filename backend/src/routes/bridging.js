@@ -120,6 +120,7 @@ router.post('/order', async (req, res) => {
 
     // 3. Translasi kode tes SIMRS ke LIS dan cari ID tes
     const testIds = [];
+    let unmappedTests = [];
     if (tests.length > 0) {
       const [mappings] = await conn.query("SELECT lis_field, simrs_field FROM simrs_mappings WHERE mapping_type = 'test' AND is_active = 1");
       const mappingDict = {};
@@ -146,6 +147,13 @@ router.post('/order', async (req, res) => {
         const row = rowPerKode.get(kode);
         if (row) testIds.push({ id: row.id, asli, kode, name: row.name || kode, instrument_id: row.instrument_id });
       }
+      // Beda dari tests_tanpa_alat (sudah termapping ke lab_tests, tinggal
+      // belum terhubung alat): ini tests[] yang SIMRS kirim tapi sama sekali
+      // tidak ketemu mapping/lab_tests apa pun. Selama minimal satu tes di
+      // order cocok, order tetap sukses -- sisanya dulu cuma dilewati diam-
+      // diam di sini, jadi SIMRS tidak pernah tahu ada yang "hilang" kecuali
+      // buka menu Sinkronisasi Katalog dan cek satu-satu.
+      unmappedTests = pasangan.filter(({ kode }) => !rowPerKode.has(kode)).map(({ asli }) => asli);
     } else {
       await conn.rollback();
       return res.status(400).json({ error: 'Daftar tests tidak boleh kosong.' });
@@ -213,7 +221,12 @@ router.post('/order', async (req, res) => {
         request_no: request_no,
         simrs_order_id: simrs_order_id,
         patient_id: patientId,
-        request_id: requestId
+        request_id: requestId,
+        // Selalu array, kosong kalau semua tes cocok -- SIMRS tidak perlu
+        // cek null/undefined dulu. Beda dari instructions.tests_tanpa_alat:
+        // ini kode yang SAMA SEKALI tidak ketemu di katalog LIS, bukan yang
+        // sudah termapping tapi belum terhubung alat.
+        unmapped_tests: unmappedTests,
       },
       instructions: {
         // Nomor yang harus diketik/di-scan petugas sebagai Sample ID di alat.

@@ -160,7 +160,10 @@ Balasan `201`:
 ```json
 {
   "message": "Order berhasil diterima",
-  "data": { "request_no": "REQ20260903123456", "simrs_order_id": "...", "patient_id": 30, "request_id": 29 },
+  "data": {
+    "request_no": "REQ20260903123456", "simrs_order_id": "...", "patient_id": 30, "request_id": 29,
+    "unmapped_tests": ["3609", "3615"]
+  },
   "instructions": {
     "sample_id": "PL202609030001",
     "medical_record_no": "000123",
@@ -175,6 +178,17 @@ Balasan `201`:
 ```
 
 Balasan `409` berarti `simrs_order_id` sudah pernah dikirim.
+
+**`data.unmapped_tests`** — nilai `tests[]` yang dikirim SIMRS tapi **sama
+sekali tidak ketemu** mapping/`lab_tests` apa pun di LIS. Selama minimal satu
+tes di order itu cocok, order tetap sukses (`201`) — sisanya yang tidak
+dikenal masuk ke sini, bukan hilang diam-diam. **Selalu array**, kosong
+(`[]`) kalau semua tes cocok — SIMRS tidak perlu cek `null`/`undefined`
+dulu. Beda dari `instructions.tests_tanpa_alat` di bawah: itu tes yang
+**sudah** termapping ke `lab_tests` tapi belum terhubung ke alat mana pun;
+`unmapped_tests` itu kode yang belum ada padanannya sama sekali. Kasus
+gagal TOTAL (tidak ada satu pun tes yang cocok) tetap membalas `400`
+seperti sebelumnya, tidak lewat field ini.
 
 **`instructions`** dipakai SIMRS untuk menampilkan notifikasi setelah petugas
 menekan "Kirim ke GeuLIS": alat lab **tidak bisa** menarik order dari LIS,
