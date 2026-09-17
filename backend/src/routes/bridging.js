@@ -17,6 +17,19 @@ function keHari(nilai, satuan) {
   return Math.round(n * (FAKTOR_UMUR[satuan] || 365));
 }
 
+/**
+ * Nama kolom fisik yang harus diisi petugas di layar alat -- beda alat beda
+ * nama kolom (EDAN i15 = "Sample ID", iChroma II = "Patient ID"). Diturunkan
+ * dari code/name/model instrumen yang sudah ada, BUKAN kolom baru yang perlu
+ * diisi manual per instalasi. Default "Sample ID" untuk alat yang belum
+ * dikenali di sini, supaya tidak ada alat yang tiba-tiba tanpa nilai.
+ */
+function inputFieldUntukAlat(inst) {
+  const teks = `${inst?.name || ''} ${inst?.code || ''} ${inst?.model || ''}`.toLowerCase();
+  if (teks.includes('ichroma')) return 'Patient ID';
+  return 'Sample ID';
+}
+
 const router = Router();
 
 // Middleware auth untuk semua endpoint di router ini
@@ -203,13 +216,14 @@ router.post('/order', async (req, res) => {
     let instruments = [];
     if (instIds.length) {
       const [instRows] = await pool.query(
-        'SELECT id, code, name FROM instruments WHERE id IN (?)',
+        'SELECT id, code, name, model FROM instruments WHERE id IN (?)',
         [instIds]
       );
       const namaAlat = new Map(instRows.map((r) => [r.id, r]));
       instruments = instIds.map((iid) => ({
         code: namaAlat.get(iid)?.code || null,
         name: namaAlat.get(iid)?.name || 'Alat tidak dikenal',
+        input_field: inputFieldUntukAlat(namaAlat.get(iid)),
         tests: testIds.filter((t) => t.instrument_id === iid).map((t) => t.name),
       }));
     }
@@ -229,17 +243,19 @@ router.post('/order', async (req, res) => {
         unmapped_tests: unmappedTests,
       },
       instructions: {
-        // Nomor yang harus diketik/di-scan petugas sebagai Sample ID di alat.
+        // Nomor yang harus diketik/di-scan petugas di alat -- kolom fisiknya
+        // beda per alat, lihat instructions.instruments[].input_field.
         // Pakai nomor order (unik per order) supaya tidak keliru saat satu
         // pasien punya beberapa order tes yang sama di hari yang sama.
         sample_id: simrs_order_id,
         medical_record_no: medical_record_no,
-        catatan: 'Ketik/scan Sample ID = nomor order ini di alat lab. '
-          + 'Kotak Patient ID iChroma II maksimal 15 karakter — bila nomor order '
-          + 'lebih panjang, pakai nomor rekam medis (hanya aman bila pasien tidak '
-          + 'punya order tes yang sama lain di hari yang sama).',
+        catatan: 'Ketik/scan nomor order ini di alat lab, sesuai kolom yang '
+          + 'disebut per alat di bawah (input_field). Kotak Patient ID iChroma II '
+          + 'maksimal 15 karakter — bila nomor order lebih panjang, pakai nomor '
+          + 'rekam medis (hanya aman bila pasien tidak punya order tes yang sama '
+          + 'lain di hari yang sama).',
         patient: { name: patient_name, medical_record_no },
-        instruments,           // [{ code, name, tests: [...] }]
+        instruments,           // [{ code, name, input_field, tests: [...] }]
         tests_tanpa_alat: tanpaAlat,  // tes yang belum dipetakan ke alat mana pun
       },
     });

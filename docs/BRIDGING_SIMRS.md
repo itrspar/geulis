@@ -167,10 +167,11 @@ Balasan `201`:
   "instructions": {
     "sample_id": "PL202609030001",
     "medical_record_no": "000123",
-    "catatan": "Ketik/scan Sample ID = nomor order ini di alat lab. Kotak Patient ID iChroma II maksimal 15 karakter ...",
+    "catatan": "Ketik/scan nomor order ini di alat lab, sesuai kolom yang disebut per alat di bawah (input_field). Kotak Patient ID iChroma II maksimal 15 karakter ...",
     "patient": { "name": "BUDI SANTOSO", "medical_record_no": "000123" },
     "instruments": [
-      { "code": "EDAN-I15-01", "name": "EDAN i15 Blood Gas", "tests": ["pH", "Natrium (Na+)", "Kalium (K+)"] }
+      { "code": "EDAN-I15-01", "name": "EDAN i15 Blood Gas", "input_field": "Sample ID", "tests": ["pH", "Natrium (Na+)", "Kalium (K+)"] },
+      { "code": "ICHROMA2-01", "name": "iChroma II", "input_field": "Patient ID", "tests": ["TSH"] }
     ],
     "tests_tanpa_alat": []
   }
@@ -198,6 +199,17 @@ adalah tes yang `id_template`-nya termapping ke kode LIS tetapi kode itu
 belum dikaitkan ke alat mana pun di menu Alat Laboratorium. SIMRS tidak perlu
 tahu pemetaan alat sendiri — kalau pemetaan di GeuLIS berubah, isi
 `instructions` ikut berubah.
+
+**`instructions.instruments[].input_field`** — nama kolom fisik yang harus
+diisi petugas di layar alat itu, karena berbeda alat berbeda nama kolom (mis.
+EDAN i15 pakai kolom **Sample ID**, iChroma II justru pakai kolom **Patient
+ID**, bukan Sample ID). Tampilkan per baris alat, bukan satu instruksi
+generik untuk semua alat — supaya petugas yang pegang iChroma tidak bingung
+saat instruksinya bilang "Sample ID" padahal kolom di layar alatnya
+bertuliskan "Patient ID". Default `"Sample ID"` untuk alat yang belum
+dikenali secara khusus. Field ini opsional untuk ditangani SIMRS — kalau versi
+GeuLIS lama belum mengirimnya, aman fallback ke "Sample ID" seperti perilaku
+sebelumnya.
 
 ### GET `/api/bridging/result/{simrs_order_id}`
 
