@@ -365,6 +365,15 @@ router.get('/result/:simrs_order_id', async (req, res) => {
       };
     }));
 
+    // Ringkasan supaya SIMRS bisa langsung munculkan notif "N hasil siap
+    // diverifikasi" begitu memanggil endpoint ini (mis. tiap kali petugas
+    // buka layar hasil lab pasien), tanpa perlu loop manual ke results[]
+    // untuk hitung sendiri. Tombol di notif itu tinggal panggil
+    // POST /result/:id/verify pakai result_id dari results[] -- tidak ada
+    // endpoint verifikasi baru, ini murni angkutan ringkasan.
+    const unverifiedCount = formattedResults.filter((r) => r.status === 'preliminary').length;
+    const needsReportCount = formattedResults.filter((r) => r.needs_report_before_verify).length;
+
     res.json({
       simrs_order_id: requestData.simrs_order_id,
       request_no: requestData.request_no,
@@ -375,7 +384,14 @@ router.get('/result/:simrs_order_id', async (req, res) => {
         gender: requestData.gender,
         birth_date: requestData.birth_date
       },
-      results: formattedResults
+      results: formattedResults,
+      // > 0 berarti ada hasil bernilai tapi belum final -- pemicu notif di
+      // SIMRS. needs_report_count adalah subset yang WAJIB mengisi
+      // reported_to dulu di POST /result/:id/verify (kritis/abnormal/delta
+      // yang belum pernah dilaporkan), supaya SIMRS bisa minta input itu di
+      // muka pada dialog verifikasi, bukan menunggu 400 dari server dulu.
+      unverified_count: unverifiedCount,
+      needs_report_count: needsReportCount,
     });
 
   } catch (err) {

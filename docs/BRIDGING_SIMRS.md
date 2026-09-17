@@ -213,7 +213,9 @@ tahu pemetaan alat sendiri — kalau pemetaan di GeuLIS berubah, isi
       "result_value": "7.25", "unit": "10*9/L", "reference": "4.0 - 10.0",
       "flag": "normal", "status": "completed"
     }
-  ]
+  ],
+  "unverified_count": 0,
+  "needs_report_count": 0
 }
 ```
 
@@ -232,6 +234,19 @@ sebagai `:id` pada `POST /result/{id}/verify`), `needs_report_before_verify`
 (`true` bila hasil berpenanda kritis/abnormal/delta mencurigakan dan belum ada
 catatan pelaporan — SIMRS sebaiknya menampilkan input "dilaporkan ke siapa"
 sebelum memanggil endpoint verifikasi, bukan menunggu error 400).
+
+**`unverified_count` / `needs_report_count`** (di level teratas, bukan per
+hasil) — ringkasan dari `results[]` di atas: jumlah hasil berstatus
+`preliminary` (ada nilai, belum diverifikasi), dan berapa di antaranya yang
+`needs_report_before_verify: true`. Dipikirkan sebagai **pemicu notifikasi**:
+setiap kali SIMRS memanggil endpoint ini (mis. petugas membuka layar hasil
+lab pasien) dan `unverified_count > 0`, tampilkan notif/badge "N hasil siap
+diverifikasi" dengan tombol per hasil yang langsung memanggil
+`POST /result/{result_id}/verify` (§6) — SIMRS tidak perlu polling terus-
+menerus di latar belakang, notifnya cukup muncul reaktif pada saat SIMRS
+sendiri sedang meminta data itu. Tidak berlaku sebagai pengganti webhook
+`/notifikasi-kritis` (§6b): itu untuk kasus kritis yang harus diketahui
+SEGERA meski tidak ada yang sedang membuka layar hasil sama sekali.
 
 ### POST `/api/bridging/result/{result_id}/verify`
 
