@@ -1,0 +1,196 @@
+====================================================================
+     PANDUAN PINDAH SERVER — dari server lama ke PC produksi baru
+====================================================================
+
+Untuk memindahkan GeuLIS yang SUDAH BERJALAN (dengan data pasien, alat,
+API key, mapping SIMRS) ke mesin baru. Untuk pemasangan RUMAH SAKIT BARU
+yang belum punya data sama sekali, pakai scripts/pasang.sh langsung
+dengan database/geulis_fresh.sql (lihat PANDUAN_SERVER.txt) -- jangan
+ikuti panduan ini.
+
+Prinsip: backend/.env server lama disalin APA ADANYA ke server baru,
+BUKAN dibuat ulang. JWT_SECRET menurunkan kunci enkripsi API key SIMRS
+(lihat backend/src/services/rahasiaApiKey.js) -- JWT_SECRET yang beda
+membuat API key yang sudah terenkripsi tidak bisa dibuka lagi lewat
+"Salin" di menu API Key (walau autentikasi bridging sendiri tetap jalan,
+karena itu dicek lewat hash, bukan dekripsi).
+
+
+0. SEBELUM MULAI
+--------------------------------------------------------------------
+- PC baru: OS Linux Mint/Ubuntu/Debian, fresh install, ada akses internet
+  (untuk NodeSource, apt) DAN terhubung ke jaringan yang sama dengan
+  alat lab (iChroma, EDAN, dst) serta SIMRS Khanza.
+- Server lama TETAP MENYALA sampai migrasi ini selesai diverifikasi
+  penuh (langkah 6). Jangan matikan lebih awal.
+- Siapkan cara menyalin berkas dari server lama ke PC baru: SSH+scp
+  (kalau satu jaringan) atau flashdisk (kalau tidak).
+
+
+1. PC BARU — PASANG PRASYARAT SISTEM
+--------------------------------------------------------------------
+    git clone https://github.com/itrspar/geulis.git /tmp/geulis-src
+    cd /tmp/geulis-src
+    sudo ./scripts/prasyarat.sh
+
+Memasang Node.js, MariaDB, Nginx, git. Aman dijalankan ulang kalau
+terputus di tengah.
+
+
+2. SERVER LAMA — BUNGKUS DATA UNTUK DIPINDAH
+--------------------------------------------------------------------
+Di server LAMA (tempat GeuLIS sekarang berjalan):
+
+    cd /var/www/geulis
+    ./scripts/migrasi_ekspor.sh
+
+Ini membuat dump database (lewat scripts/backup.sh), menyalin
+backend/.env apa adanya, dan mencatat alat lab aktif beserta port-nya
+ke migrasi_keluar/daftar_alat.txt. Ikuti perintah scp yang dicetak di
+akhir untuk menyalin folder migrasi_keluar/ ke PC baru, misalnya:
+
+    scp -r /var/www/geulis/migrasi_keluar user@IP_PC_BARU:/tmp/migrasi_geulis
+
+Paket ini berisi DATA PASIEN dan KREDENSIAL -- perlakukan seperti
+cadangan database biasa (jangan ditaruh di tempat yang bisa diakses
+sembarang orang).
+
+
+3. PC BARU — SALIN KODE APLIKASI
+--------------------------------------------------------------------
+    sudo mkdir -p /var/www/geulis
+    sudo chown -R "$USER:$USER" /var/www/geulis
+    git clone -b rspar https://github.com/itrspar/geulis.git /var/www/geulis
+    cd /var/www/geulis
+
+(Ganti "rspar" bila nama cabang produksi rumah sakit ini berbeda --
+cek dengan "git branch -a" di server lama kalau ragu.)
+
+
+4. PC BARU — PASANG .env DAN PULIHKAN DATABASE
+--------------------------------------------------------------------
+a. Taruh .env dari paket migrasi (BUKAN membuat baru):
+
+    install -m 600 /tmp/migrasi_geulis/backend.env /var/www/geulis/backend/.env
+
+b. Baca DB_NAME/DB_USER/DB_PASSWORD dari .env yang baru ditaruh itu,
+   lalu buat database + user yang SAMA PERSIS di MariaDB PC baru
+   (kosong dulu -- isinya dipulihkan di langkah c):
+
+    source /var/www/geulis/backend/.env
+    sudo mysql -e "CREATE DATABASE IF NOT EXISTS \`$DB_NAME\`
+      CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+    sudo mysql -e "CREATE USER IF NOT EXISTS '$DB_USER'@'localhost'
+      IDENTIFIED BY '$DB_PASSWORD';
+      GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'localhost';
+      FLUSH PRIVILEGES;"
+
+c. Pulihkan dump ke database yang baru dibuat itu:
+
+    cd /var/www/geulis
+    ./scripts/backup.sh --pulihkan /tmp/migrasi_geulis/geulis_*.sql.gz
+
+   (skrip akan minta ketik ulang nama database untuk konfirmasi --
+   ini SENGAJA, supaya tidak menimpa database yang salah)
+
+
+5. PC BARU — PASANG APLIKASI
+--------------------------------------------------------------------
+    cd /var/www/geulis
+    sudo ./scripts/pasang.sh
+
+Karena database dan .env SUDAH ADA (langkah 4), pasang.sh otomatis
+melewati keduanya tanpa menyentuhnya -- ia hanya memasang dependensi,
+membangun frontend, membuat layanan systemd, dan konfigurasi Nginx
+(termasuk header keamanan X-Frame-Options dkk).
+
+Baca ringkasan di akhir skrip untuk alamat web dan port yang dipakai.
+
+
+6. VERIFIKASI SEBELUM SERVER LAMA DIMATIKAN
+--------------------------------------------------------------------
+a. Layanan aktif:
+
+    systemctl status geulis
+    curl http://localhost:<PORT_WEB>/api/health   # -> {"status":"ok",...}
+
+b. Login BENAR-benar berfungsi (bukan cuma health check -- lihat
+   peringatan di PANDUAN_SERVER.txt §8) dengan akun yang SUDAH ADA di
+   data yang dipulihkan (bukan SANDI_AWAL.txt -- itu hanya untuk
+   database kosong):
+
+    curl -X POST http://localhost:<PORT_WEB>/api/auth/login \
+      -H 'Content-Type: application/json' \
+      -d '{"username":"admin","password":"<sandi yang sudah dipakai>"}'
+
+c. Buka menu Pengaturan -> API Key, coba "Salin" pada salah satu key
+   yang sudah ada -- harus berhasil membuka key aslinya (membuktikan
+   JWT_SECRET yang disalin memang benar).
+
+d. Buka menu Mapping SIMRS -- pastikan pemetaan user & test catalog
+   ikut terbawa.
+
+
+7. ALAT LAB — ARAHKAN ULANG SECARA FISIK
+--------------------------------------------------------------------
+Server TIDAK menarik koneksi dari alat -- semua alat di sini
+conn_mode=server, artinya ALAT yang menghubungi SERVER. Lihat
+migrasi_keluar/daftar_alat.txt untuk daftar port yang dipakai
+(mis. iChroma II :6000, EDAN i15 :8000).
+
+Untuk tiap alat: ubah setelan IP tujuan di alat itu sendiri (layar
+alat atau software LIS interface-nya) dari IP server lama ke IP PC
+baru. Port TIDAK perlu diganti, cukup IP.
+
+Lalu buka port itu di firewall PC baru (pasang.sh hanya membuka port
+web, port alat tidak otomatis):
+
+    sudo ufw allow 6000/tcp     # ganti sesuai daftar_alat.txt
+    sudo ufw allow 8000/tcp
+
+Uji satu alat dulu (kirim satu hasil, cek muncul di GeuLIS) sebelum
+mengarahkan semuanya.
+
+
+8. SIMRS KHANZA — ARAHKAN ULANG base_url
+--------------------------------------------------------------------
+Di konfigurasi Khanza (ApiGEULIS / sejenisnya), ganti alamat GeuLIS
+dari IP server lama ke IP PC baru. API key TIDAK perlu diganti --
+sudah terbawa dari database yang dipulihkan.
+
+Uji satu order dari Khanza, pastikan sampai dan bisa diambil hasilnya
+sebelum menganggap migrasi selesai.
+
+
+9. CADANGAN OTOMATIS DI PC BARU
+--------------------------------------------------------------------
+scripts/backup.sh belum terjadwal otomatis di mana pun -- pasang lewat
+cron (PMK 24/2022 Pasal 20 ayat 5 mewajibkan salinan di lokasi BEDA,
+jadi WAJIB isi LUAR_RSYNC atau LUAR_DIR):
+
+    sudo crontab -e
+    # tambahkan satu baris, sesuaikan tujuan luar mesinnya:
+    0 1 * * * LUAR_DIR=/mnt/cadangan /var/www/geulis/scripts/backup.sh >> /var/log/geulis-backup.log 2>&1
+
+Uji manual dulu sebelum mengandalkan cron:
+
+    LUAR_DIR=/mnt/cadangan /var/www/geulis/scripts/backup.sh
+
+
+10. SETELAH SEMUA TERVERIFIKASI
+--------------------------------------------------------------------
+a. Matikan GeuLIS di server lama supaya tidak ada dua instans aktif
+   menulis ke database yang berbeda secara bersamaan:
+
+    # di server lama
+    pm2 stop geulis-backend   # atau: systemctl stop geulis (tergantung cara lama dipasang)
+
+b. Hapus paket migrasi dari KEDUA mesin (berisi kredensial & data
+   pasien apa adanya):
+
+    rm -rf /var/www/geulis/migrasi_keluar     # server lama
+    rm -rf /tmp/migrasi_geulis                # PC baru
+
+c. Simpan cadangan terakhir server lama di tempat aman sebelum mesinnya
+   benar-benar dipensiunkan/diformat ulang.
+====================================================================

@@ -199,13 +199,24 @@ server {
     root $DIR/frontend/dist;
     index index.html;
 
+    # Header keamanan dasar -- cegah clickjacking (aplikasi ditaruh di iframe
+    # situs lain) dan MIME-sniffing. "always" supaya ikut terpasang bahkan
+    # di respons error (404 dsb). SAMEORIGIN (bukan DENY) karena menu Manual
+    # memuat berkas lewat iframe dari origin yang sama.
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
     # Frontend memanggil API lewat path relatif /api dan mengandalkan proxy ini.
     # Menyajikan dist tanpa proxy menghasilkan aplikasi yang tampak jalan tetapi
     # setiap panggilan API menerima index.html.
     location /api/ {
         proxy_pass http://127.0.0.1:$PORT_API;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_http_version 1.1;
+        proxy_set_header Host              \$host;
+        proxy_set_header X-Real-IP         \$remote_addr;
+        proxy_set_header X-Forwarded-For   \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
     location / {
         try_files \$uri \$uri/ /index.html;

@@ -107,9 +107,16 @@ UKURAN=$(stat -c%s "$BERKAS")
 # benar-benar menandakan kegagalan adalah struktur yang hilang: dump yang
 # berhasil tetapi tidak memuat tabel inti berarti kredensial atau nama database
 # yang keliru, dan itu terjadi TANPA galat apa pun.
+#
+# zgrep langsung ke berkas .gz, BUKAN "gunzip -c | grep -q": dengan pipefail
+# aktif, begitu grep -q menemukan kecocokan dan berhenti membaca, gunzip
+# menerima SIGPIPE dan keluar dengan status bukan-nol -- pipefail lalu
+# menganggap SELURUH pipeline gagal walau grep sendiri sudah berhasil
+# menemukan barisnya. Akibatnya tabel manapun yang CREATE TABLE-nya tidak
+# kebetulan paling akhir dalam dump selalu salah dilaporkan "hilang".
 HILANG=""
 for t in patients lab_results lab_tests users; do
-  gunzip -c "$BERKAS" | grep -q "CREATE TABLE \`$t\`" || HILANG="$HILANG $t"
+  zgrep -q "CREATE TABLE \`$t\`" "$BERKAS" || HILANG="$HILANG $t"
 done
 if [ -n "$HILANG" ]; then
   merah "Cadangan tidak memuat tabel inti:$HILANG"
