@@ -179,18 +179,32 @@ Uji manual dulu sebelum mengandalkan cron:
 
 10. SETELAH SEMUA TERVERIFIKASI
 --------------------------------------------------------------------
-a. Matikan GeuLIS di server lama supaya tidak ada dua instans aktif
-   menulis ke database yang berbeda secara bersamaan:
+Server lama TIDAK perlu dimatikan kalau memang akan dipakai terus
+sebagai server DEV (IP-nya beda dari PC produksi, jadi tidak
+bentrok di jaringan). Yang WAJIB dipastikan malah kebalikannya --
+server lama BENAR-BENAR LEPAS dari jalur data pasien sungguhan:
 
-    # di server lama
-    pm2 stop geulis-backend   # atau: systemctl stop geulis (tergantung cara lama dipasang)
+a. Pastikan TIDAK ADA alat lab atau konfigurasi Khanza yang masih
+   menunjuk IP server lama (harusnya sudah beres di langkah 7 & 8 --
+   ini cuma pengecekan ulang). Cara paling pasti: pantau
+   pm2 logs geulis-backend (atau journalctl -u geulis -f) di server
+   lama selama beberapa jam kerja -- kalau masih ada order/hasil
+   masuk, berarti ada yang belum diarahkan ulang.
 
-b. Hapus paket migrasi dari KEDUA mesin (berisi kredensial & data
+b. Setelah dipastikan bersih, database di server lama otomatis jadi
+   SNAPSHOT beku per waktu migrasi -- aman dipakai sebagai data uji
+   pengembangan (nama pasien & rekam medis di dalamnya tetap data
+   sungguhan, perlakukan sama hati-hatinya seperti sebelum migrasi).
+   Data pasien BARU sesudah ini hanya ada di produksi (PC baru).
+
+c. Hapus paket migrasi dari KEDUA mesin (berisi kredensial & data
    pasien apa adanya):
 
     rm -rf /var/www/geulis/migrasi_keluar     # server lama
     rm -rf /tmp/migrasi_geulis                # PC baru
 
-c. Simpan cadangan terakhir server lama di tempat aman sebelum mesinnya
-   benar-benar dipensiunkan/diformat ulang.
+d. Server lama (dev) tetap memuat DATA PASIEN SUNGGUHAN di snapshot-nya
+   (poin b) -- perlakukan dengan kontrol akses yang sama seriusnya
+   dengan produksi (firewall, siapa yang boleh SSH, dst), jangan
+   dianggap "cuma dev" lalu dilonggarkan.
 ====================================================================
