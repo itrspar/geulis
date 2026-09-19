@@ -42,6 +42,12 @@ export const api = {
       verifikasi: (reqId, jenis) => request(`/naratif/${reqId}/verifikasi`, { method: 'POST', body: JSON.stringify({ jenis }) }),
     },
     laporanRekap: (jenis, dari, sampai) => request(`/laporan/rekap?jenis=${jenis}&dari=${dari}&sampai=${sampai}`),
+    laporanKumulatif: (patientId, dari, sampai) => {
+      const p = new URLSearchParams({ patient_id: patientId });
+      if (dari) p.append('dari', dari);
+      if (sampai) p.append('sampai', sampai);
+      return request(`/laporan/kumulatif?${p.toString()}`);
+    },
     monitoring: () => request('/dashboard/monitoring'),
     pindaiKode: (kode) => request(`/verif-spesimen?kode=${encodeURIComponent(kode)}`),
     bankDarah: {
@@ -190,6 +196,8 @@ export const api = {
     deleteMap: (mapId) => request(`/instruments/maps/${mapId}`, { method: 'DELETE' }),
     logs: () => request('/instruments/logs/recent'),
     reload: () => request('/instruments/reload', { method: 'POST' }),
+    profiles: () => request('/instruments/profiles'),
+    applyProfile: (body) => request('/instruments/apply-profile', { method: 'POST', body: JSON.stringify(body) }),
   },
   mapping: {
     get: () => request('/mapping'),

@@ -8,6 +8,7 @@ const DOKUMEN = {
   'bc-3600': { file: '/BC-3600.html', judul: 'Manual Alat BC-3600', icon: '🩸' },
   'bc-11': { file: '/BC-11.html', judul: 'Manual Alat BC-11', icon: '🔬' },
   'afinion-2': { file: '/AFINION-2.html', judul: 'Manual Alat Afinion 2', icon: '🩺' },
+  'edan-i15': { file: '/EDAN-I15.html', judul: 'Manual Alat EDAN i15', icon: '🫁' },
 };
 
 export default function Manual() {

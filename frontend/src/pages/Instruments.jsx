@@ -50,12 +50,15 @@ export default function Instruments() {
   const [searchTerm, setSearchTerm] = useState('');
   const [draggedIndex, setDraggedIndex] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [profiles, setProfiles] = useState([]);
+  const [profilId, setProfilId] = useState('');
   const [showMapForm, setShowMapForm] = useState(false);
 
   const load = () => {
     api.instruments.list().then(setList);
     api.instruments.logs().then(setLogs);
     api.tests.list().then(setTests);
+    api.instruments.profiles().then(setProfiles).catch(() => {});
     if (can('mapping.view')) {
       api.mapping.get().then(res => setSimrsMaps(res.mappings || [])).catch(() => {});
     }
@@ -85,10 +88,44 @@ export default function Instruments() {
     }
   };
 
+  const resetForm = () => {
+    setForm({ code: '', name: '', manufacturer: '', model: '', protocol: 'astm', conn_mode: 'server', host: '', port: 5000, is_active: 1 });
+    setProfilId('');
+    setShowForm(false);
+  };
+
+  // Memilih profil mengisi protokol/koneksi/port + produsen/model. Kode & nama
+  // dibiarkan agar petugas menamai alat ini sendiri; peta kode tes dipasang saat
+  // simpan (lewat endpoint apply-profile).
+  const pilihProfil = (id) => {
+    setProfilId(id);
+    const p = profiles.find((x) => x.id === id);
+    if (!p) return;
+    setForm((f) => ({
+      ...f,
+      manufacturer: p.pabrikan, model: p.model,
+      protocol: p.protokol, conn_mode: p.mode, port: p.port,
+      host: p.mode === 'client' ? f.host : '',
+    }));
+  };
+
   const create = async (e) => {
     e.preventDefault();
+    if (profilId) {
+      const r = await api.instruments.applyProfile({
+        profile_id: profilId, code: form.code, name: form.name,
+        host: form.host, port: form.port, is_active: form.is_active,
+      });
+      resetForm();
+      load();
+      const catatan = r.terverifikasi
+        ? 'Peta terverifikasi diterapkan.'
+        : '⚠ Peta ini "starter" — verifikasi kode tes terhadap alat aslinya (alur "Hasil Belum Cocok" membantu).';
+      Swal.fire('Alat dibuat dari profil', `${r.peta_terpasang} parameter dipetakan (${r.tes_dibuat} tes baru dibuat). ${catatan}`, r.terverifikasi ? 'success' : 'info');
+      return;
+    }
     await api.instruments.create(form);
-    setForm({ code: '', name: '', manufacturer: '', model: '', protocol: 'astm', conn_mode: 'server', host: '', port: 5000, is_active: 1 });
+    resetForm();
     setShowForm(false);
     load();
     Swal.fire('Berhasil', 'Alat berhasil ditambahkan', 'success');
@@ -355,6 +392,27 @@ export default function Instruments() {
       {can('instruments.manage') && showForm && (
         <form className="card" onSubmit={create} style={{ marginBottom: '1.25rem' }}>
           <h2 className="section-title">Tambah Alat</h2>
+          {profiles.length > 0 && (
+            <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+              <label>Pakai Profil (opsional)</label>
+              <select value={profilId} onChange={(e) => pilihProfil(e.target.value)}>
+                <option value="">— konfigurasi manual —</option>
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.pabrikan} {p.model}{p.terverifikasi ? ' ✓ terverifikasi' : ' (perlu verifikasi peta)'}
+                  </option>
+                ))}
+              </select>
+              {profilId && (() => {
+                const p = profiles.find((x) => x.id === profilId);
+                return p ? (
+                  <p className="protocol-hint" style={{ marginTop: '0.4rem' }}>
+                    {p.catatan} <strong>{p.peta.length} parameter</strong> akan dipetakan otomatis.
+                  </p>
+                ) : null;
+              })()}
+            </div>
+          )}
           <div className="form-grid">
             <div className="form-group"><label>Kode</label><input required value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} /></div>
             <div className="form-group"><label>Nama</label><input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
@@ -399,7 +457,7 @@ export default function Instruments() {
           <p className="protocol-hint">{PROTOCOL_HELP[form.protocol]}</p>
           <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
             <button type="submit">Simpan</button>
-            <button type="button" className="secondary" onClick={() => { setShowForm(false); setForm({ code: '', name: '', manufacturer: '', model: '', protocol: 'astm', conn_mode: 'server', host: '', port: 5000, is_active: 1 }); }}>Batal</button>
+            <button type="button" className="secondary" onClick={resetForm}>Batal</button>
           </div>
           <p className="page-desc" style={{ marginTop: '0.75rem' }}>Restart backend setelah ubah port/protokol.</p>
         </form>
