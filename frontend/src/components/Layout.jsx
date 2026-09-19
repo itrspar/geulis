@@ -62,6 +62,17 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Versi server yang benar-benar berjalan (otoritatif). APP_VERSION di atas
+  // hanyalah versi build antarmuka; keduanya bisa berbeda bila hanya salah satu
+  // yang dideploy, dan justru itulah yang perlu terlihat saat menelusuri masalah.
+  const [versiServer, setVersiServer] = useState(null);
+  useEffect(() => {
+    fetch('/api/version')
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setVersiServer)
+      .catch(() => {});
+  }, []);
+
   // Susun kategori sesuai hak akses; tambah Administrasi (admin) & Bantuan.
   const kategori = KATEGORI
     .map((k) => ({ judul: k.judul, items: k.items.filter((it) => hasMenu(it.key)) }))
@@ -226,7 +237,15 @@ export default function Layout() {
             yang sedang berjalan di depannya.
           */}
           <div className="sidebar-lisensi">
-            <div>GeuLIS v{APP_VERSION}</div>
+            <div title={`Antarmuka build v${APP_VERSION}`}>
+              GeuLIS v{versiServer?.versi || APP_VERSION}
+              {versiServer?.commit && <span className="sidebar-build"> · {versiServer.commit}</span>}
+            </div>
+            {versiServer?.dibangun && (
+              <div className="sidebar-build">
+                Build {new Date(versiServer.dibangun).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+              </div>
+            )}
             <div>
               <a href={SOURCE_URL} target="_blank" rel="noreferrer">Kode sumber</a>
               {' · '}
@@ -275,6 +294,7 @@ export default function Layout() {
         }
         .nav-kat-head:hover { color: var(--text); }
         .nav-kat-chev { font-size: 0.65rem; opacity: 0.8; }
+        .sidebar-build { opacity: 0.65; font-size: 0.7rem; }
         nav a {
           display: flex; align-items: center; gap: 0.6rem; padding: 0.65rem 0.85rem;
           border-radius: 8px; color: var(--muted); transition: 0.15s;

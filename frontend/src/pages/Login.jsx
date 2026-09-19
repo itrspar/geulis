@@ -10,8 +10,16 @@ export default function Login() {
   const [captchaCode, setCaptchaCode] = useState('');
   const [captchaInput, setCaptchaInput] = useState('');
   const canvasRef = useRef(null);
+  const [versi, setVersi] = useState(null);
   const { login, user } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    fetch('/api/version')
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setVersi)
+      .catch(() => {});
+  }, []);
 
   const generateCaptcha = () => {
     const chars = '0123456789';
@@ -146,6 +154,11 @@ export default function Login() {
           Sandi awal dibuat acak saat pemasangan dan tercatat di
           <code> SANDI_AWAL.txt</code> pada server.
         </p>
+        {versi && (
+          <p className="versi-jejak">
+            GeuLIS v{versi.versi}{versi.commit ? ` · ${versi.commit}` : ''}
+          </p>
+        )}
       </form>
       <style>{`
         .login-page {
@@ -160,6 +173,7 @@ export default function Login() {
         .login-card .form-group { margin-bottom: 1rem; }
         .login-card button { width: 100%; margin-top: 0.5rem; padding: 0.75rem; }
         .hint { text-align: center; font-size: 0.75rem; color: var(--muted); margin-top: 1rem; }
+        .versi-jejak { text-align: center; font-size: 0.7rem; color: var(--muted); opacity: 0.7; margin-top: 0.75rem; }
         .loading-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; color: var(--muted); }
       `}</style>
     </div>
