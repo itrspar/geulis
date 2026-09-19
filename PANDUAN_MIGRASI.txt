@@ -29,9 +29,14 @@ karena itu dicek lewat hash, bukan dekripsi).
 
 1. PC BARU — PASANG PRASYARAT SISTEM
 --------------------------------------------------------------------
-    git clone https://github.com/itrspar/geulis.git /tmp/geulis-src
+    git clone -b rspar https://github.com/itrspar/geulis.git /tmp/geulis-src
     cd /tmp/geulis-src
-    sudo ./scripts/prasyarat.sh
+    sudo bash scripts/prasyarat.sh
+
+(WAJIB "-b rspar" -- branch default repo ini ["main"] TIDAK memuat
+scripts/prasyarat.sh dan skrip migrasi lain, itu hanya ada di branch
+"rspar". Dipanggil lewat "bash scripts/..." bukan "./scripts/..." supaya
+tidak bergantung pada bit-eksekusi berkas atau mount /tmp yang noexec.)
 
 Memasang Node.js, MariaDB, Nginx, git. Aman dijalankan ulang kalau
 terputus di tengah.
@@ -42,7 +47,7 @@ terputus di tengah.
 Di server LAMA (tempat GeuLIS sekarang berjalan):
 
     cd /var/www/geulis
-    ./scripts/migrasi_ekspor.sh
+    bash scripts/migrasi_ekspor.sh
 
 Ini membuat dump database (lewat scripts/backup.sh), menyalin
 backend/.env apa adanya, dan mencatat alat lab aktif beserta port-nya
@@ -88,7 +93,7 @@ b. Baca DB_NAME/DB_USER/DB_PASSWORD dari .env yang baru ditaruh itu,
 c. Pulihkan dump ke database yang baru dibuat itu:
 
     cd /var/www/geulis
-    ./scripts/backup.sh --pulihkan /tmp/migrasi_geulis/geulis_*.sql.gz
+    bash scripts/backup.sh --pulihkan /tmp/migrasi_geulis/geulis_*.sql.gz
 
    (skrip akan minta ketik ulang nama database untuk konfirmasi --
    ini SENGAJA, supaya tidak menimpa database yang salah)
@@ -97,7 +102,7 @@ c. Pulihkan dump ke database yang baru dibuat itu:
 5. PC BARU — PASANG APLIKASI
 --------------------------------------------------------------------
     cd /var/www/geulis
-    sudo ./scripts/pasang.sh
+    sudo bash scripts/pasang.sh
 
 Karena database dan .env SUDAH ADA (langkah 4), pasang.sh otomatis
 melewati keduanya tanpa menyentuhnya -- ia hanya memasang dependensi,
