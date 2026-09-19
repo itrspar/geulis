@@ -21,6 +21,10 @@ frontend/public/*_manual.pdf
 # Sandi awal yang dibuat acak saat pemasangan. Tidak boleh masuk git.
 SANDI_AWAL.txt
 
+# Paket keluaran scripts/migrasi_ekspor.sh -- dump database (data pasien) +
+# backend/.env (JWT_SECRET, password DB) apa adanya. Tidak boleh masuk git.
+migrasi_keluar/
+
 # Tangkapan layar.
 #
 # Layar GeuLIS menampilkan nama pasien dan nomor rekam medis. Tangkapan layar
