@@ -84,5 +84,5 @@ echo "  mysql  : $(mysql --version 2>/dev/null | awk '{print $3, $5}')"
 echo "  nginx  : $(nginx -v 2>&1)"
 echo
 echo "  Langkah berikutnya:"
-echo "    - Pemasangan BARU (kosong)  : clone repo lalu 'sudo ./scripts/pasang.sh'"
+echo "    - Pemasangan BARU (kosong)  : clone repo (branch rspar) lalu 'sudo bash scripts/pasang.sh'"
 echo "    - Pindahan dari server lama : ikuti PANDUAN_MIGRASI.txt"
