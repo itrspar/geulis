@@ -246,9 +246,23 @@ echo "  Web    : http://$(hostname -I | awk '{print $1}'):$PORT_WEB"
 echo "  Layanan: systemctl status geulis"
 echo "  Log    : journalctl -u geulis -f"
 echo
-echo "  Sandi awal pengguna aplikasi dibuat acak dan dicatat di:"
-echo "    $DIR/SANDI_AWAL.txt"
-echo "  Ganti sandinya lalu HAPUS berkas itu."
+echo
+# ensureSeed() (lihat backend/src/ensureSeed.js) HANYA membuat sandi baru
+# kalau users.password_hash masih placeholder -- pada database yang
+# dipulihkan dari cadangan (lihat PANDUAN_MIGRASI.txt), sandi ASLI sudah
+# ada dan TIDAK disentuh. Menyebut "sandi awal dibuat" tanpa syarat di sini
+# dulu keliru di skenario itu -- diperiksa dulu berkasnya benar-benar ada
+# sebelum bilang begitu. Diberi jeda sebentar karena backend baru saja
+# direstart dan ensureSeed() jalan async setelah listen.
+sleep 2
+if [ -f "$DIR/SANDI_AWAL.txt" ]; then
+  echo "  Sandi awal pengguna aplikasi dibuat acak dan dicatat di:"
+  echo "    $DIR/SANDI_AWAL.txt"
+  echo "  Ganti sandinya lalu HAPUS berkas itu."
+else
+  echo "  Database sudah punya user dengan sandi -- tidak ada sandi baru dibuat."
+  echo "  (Kalau ini pemulihan dari cadangan, pakai sandi yang sudah ada sebelumnya.)"
+fi
 echo
 kuning "  Belum dikerjakan skrip ini, dan keduanya wajib:"
 echo "    1. Cadangan luar mesin — lihat scripts/backup.sh, set LUAR_RSYNC atau LUAR_DIR."
