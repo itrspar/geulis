@@ -24,6 +24,7 @@ import verifSpesimenRoutes from './routes/verifSpesimen.js';
 import duploRoutes from './routes/duplo.js';
 import naratifRoutes from './routes/naratif.js';
 import laporanRekapRoutes from './routes/laporanRekap.js';
+import laporanKumulatifRoutes from './routes/laporanKumulatif.js';
 import bankDarahRoutes from './routes/bankDarah.js';
 import mikrobiologiRoutes from './routes/mikrobiologi.js';
 import monitoringRoutes from './routes/monitoring.js';
@@ -37,6 +38,7 @@ import interpretasiRoutes from './routes/interpretasi.js';
 import portalRoutes from './routes/portal.js';
 import ttdRoutes, { rutePublik as ttdPublik } from './routes/ttdRoute.js';
 import { startInstrumentListeners } from './services/instrumentListener.js';
+import { infoVersi } from './version.js';
 import { ensureSeed } from './ensureSeed.js';
 import { ensureSchema } from './ensureSchema.js';
 
@@ -73,6 +75,8 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 
 app.get('/api/health', (_, res) => res.json({ status: 'ok', service: 'GeuLIS' }));
+// Publik (tanpa login) supaya versi yang berjalan bisa dicek dari luar saat deploy.
+app.get('/api/version', (_, res) => res.json(infoVersi()));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/dashboard', dashboardRoutes);
@@ -100,6 +104,7 @@ app.use('/api/verif-spesimen', verifSpesimenRoutes);
 app.use('/api/duplo', duploRoutes);
 app.use('/api/naratif', naratifRoutes);
 app.use('/api/laporan/rekap', laporanRekapRoutes);
+app.use('/api/laporan', laporanKumulatifRoutes);
 app.use('/api/bank-darah', bankDarahRoutes);
 app.use('/api/mikrobiologi', mikrobiologiRoutes);
 app.use('/api/dashboard/monitoring', monitoringRoutes);

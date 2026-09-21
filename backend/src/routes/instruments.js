@@ -4,11 +4,79 @@ import { authenticate, requirePermission } from '../middleware/auth.js';
 import { PROTOCOL_HELP } from '../services/protocolParsers.js';
 import { reloadInstrumentListeners } from '../services/instrumentListener.js';
 import { audit } from '../services/audit.js';
+import { PROFIL_ALAT, cariProfil } from '../data/instrumentProfiles.js';
 
 const router = Router();
 
 router.get('/protocols', authenticate, requirePermission('instruments.view'), (_req, res) => {
   res.json(PROTOCOL_HELP);
+});
+
+// Katalog profil alat siap-pakai (protokol + koneksi + peta kode tes awal).
+router.get('/profiles', authenticate, requirePermission('instruments.view'), (_req, res) => {
+  res.json(PROFIL_ALAT);
+});
+
+// Terapkan profil: buat alat sekaligus peta kode tes awalnya dalam satu langkah.
+// Tes LIS yang belum ada dibuat otomatis (perilaku sama seperti pemetaan manual),
+// supaya peta tidak menggantung ke tes yang tidak ada.
+router.post('/apply-profile', authenticate, requirePermission('instruments.manage'), async (req, res) => {
+  const { profile_id, code, name, host, port, is_active } = req.body;
+  const profil = cariProfil(profile_id);
+  if (!profil) return res.status(400).json({ error: 'Profil tidak dikenal' });
+  if (!code || !name) return res.status(400).json({ error: 'Kode dan nama alat wajib diisi' });
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [ins] = await conn.query(
+      `INSERT INTO instruments (code, name, manufacturer, model, protocol, conn_mode, host, port, config_json, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [code, name, profil.pabrikan, profil.model, profil.protokol,
+       profil.mode === 'client' ? 'client' : 'server',
+       host || (profil.mode === 'client' ? '' : '0.0.0.0'), port || profil.port,
+       JSON.stringify({ profil: profil.id }), is_active ?? 1]
+    );
+    const instrumentId = ins.insertId;
+
+    let tesDibuat = 0, petaTerpasang = 0;
+    for (const p of profil.peta) {
+      // Cari tes LIS berdasarkan kode; buat bila belum ada.
+      let [[tes]] = await conn.query('SELECT id FROM lab_tests WHERE code = ?', [p.lis]);
+      if (!tes) {
+        const [t] = await conn.query(
+          'INSERT INTO lab_tests (code, name, is_active) VALUES (?, ?, 1)',
+          [p.lis, p.nama || p.lis]
+        );
+        tes = { id: t.insertId };
+        tesDibuat++;
+      }
+      // Lewati bila peta dengan kode alat yang sama sudah ada (idempoten).
+      const [[ada]] = await conn.query(
+        'SELECT id FROM instrument_test_map WHERE instrument_id = ? AND instrument_test_code = ?',
+        [instrumentId, p.alat]
+      );
+      if (!ada) {
+        await conn.query(
+          'INSERT INTO instrument_test_map (instrument_id, instrument_test_code, test_id) VALUES (?, ?, ?)',
+          [instrumentId, p.alat, tes.id]
+        );
+        petaTerpasang++;
+      }
+    }
+    await conn.commit();
+    await audit(req, 'APPLY_PROFILE', 'instrument', instrumentId, { profil: profil.id, tesDibuat, petaTerpasang });
+    await reloadInstrumentListeners().catch(() => {});
+    res.status(201).json({
+      id: instrumentId, tes_dibuat: tesDibuat, peta_terpasang: petaTerpasang,
+      terverifikasi: profil.terverifikasi,
+    });
+  } catch (e) {
+    await conn.rollback().catch(() => {});
+    res.status(500).json({ error: e.message });
+  } finally {
+    conn.release();
+  }
 });
 
 // #7 Reload listener alat tanpa restart backend

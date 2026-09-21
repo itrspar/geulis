@@ -13,11 +13,13 @@ import Instruments from './pages/Instruments';
 import Settings from './pages/Settings';
 import Audit from './pages/Audit';
 import Manual from './pages/Manual';
+import ManualAlat from './pages/ManualAlat';
 import NilaiRujukan from './pages/NilaiRujukan';
 import VerifSpesimen from './pages/VerifSpesimen';
 import Duplo from './pages/Duplo';
 import Naratif from './pages/Naratif';
 import LaporanRekap from './pages/LaporanRekap';
+import LaporanKumulatif from './pages/LaporanKumulatif';
 import BankDarah from './pages/BankDarah';
 import Mikrobiologi from './pages/Mikrobiologi';
 import PortalPasien from './pages/PortalPasien';
@@ -69,9 +71,11 @@ export default function App() {
         <Route path="duplo" element={<Duplo />} />
         <Route path="naratif" element={<Naratif />} />
         <Route path="laporan-rekap" element={<LaporanRekap />} />
+        <Route path="laporan-kumulatif" element={<LaporanKumulatif />} />
         <Route path="bank-darah" element={<BankDarah />} />
         <Route path="mikrobiologi" element={<Mikrobiologi />} />
 
+        <Route path="manual-alat" element={<ManualAlat />} />
         <Route path="manual/:doc" element={<Manual />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
