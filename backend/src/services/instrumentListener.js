@@ -52,17 +52,33 @@ async function cariPasien(sampleId) {
   return { id: row?.id ?? null, gender: row?.gender ?? null };
 }
 
-/** Cari request + item aktif untuk pasien+tes (agar hasil terhubung ke order) */
+/**
+ * Cari request + item aktif untuk pasien+tes (agar hasil terhubung ke order).
+ *
+ * Kalau ketemu LEBIH DARI SATU permintaan terbuka yang sama-sama minta tes
+ * ini, JANGAN menebak yang mana (dulu diam-diam mengambil yang paling baru).
+ * Nomor sampel yang diketik di alat cuma memastikan PASIEN-nya, bukan
+ * permintaan MANA yang dimaksud -- kalau pasien itu kebetulan punya 2+
+ * permintaan terbuka untuk tes yang sama, menebak berarti hasil bisa
+ * tertempel ke permintaan yang salah TANPA tanda apa pun ke petugas (tampil
+ * normal di Hasil Lab, seolah memang benar). Ditahan sebagai "yatim"
+ * (request_id kosong, lihat saveInstrumentResults di bawah) supaya petugas
+ * yang memilih lewat menu Hasil Belum Cocok -> Hasil Tanpa Permintaan.
+ */
 async function findRequestLink(patientId, testId) {
-  const [[row]] = await pool.query(
+  const [rows] = await pool.query(
     `SELECT lri.id AS request_item_id, lri.request_id
      FROM lab_request_items lri
      JOIN lab_requests lr ON lr.id = lri.request_id
      WHERE lr.patient_id = ? AND lri.test_id = ?
        AND lr.status <> 'cancelled'
-     ORDER BY lr.requested_at DESC LIMIT 1`,
+     ORDER BY lr.requested_at DESC LIMIT 2`,
     [patientId, testId]
   );
+  if (rows.length > 1) {
+    return { request_item_id: null, request_id: null, ambigu: true };
+  }
+  const row = rows[0];
   return { request_item_id: row?.request_item_id ?? null, request_id: row?.request_id ?? null };
 }
 
@@ -202,6 +218,9 @@ async function saveInstrumentResults(instrumentId, protocol, sampleId, results, 
     const [[test]] = await pool.query('SELECT * FROM lab_tests WHERE id = ?', [testId]);
     const { flag } = await nilaiHasil(item.value, test, await konteksPasien(patientId));
     const link = await findRequestLink(patientId, testId);
+    if (link.ambigu) {
+      console.warn(`[Instrument] ${test?.code} pasien ${patientId}: >1 permintaan terbuka sama-sama minta tes ini -- ditahan tanpa request_id, perlu ditautkan manual lewat Hasil Belum Cocok`);
+    }
     // Dihitung sebelum baris baru masuk, supaya pembandingnya benar-benar hasil
     // sebelumnya dan bukan hasil ini sendiri.
     const delta = await hitungDelta(patientId, testId, item.value, test?.code, test?.delta_limit_percent);

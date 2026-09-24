@@ -14,20 +14,32 @@ const router = Router();
 // jalur ini menilai dengan cara yang sama seperti jalur alat dan jalur
 // pencocokan ulang.
 
-/** Cari request+item aktif untuk pasien+tes agar hasil terhubung ke order */
+/**
+ * Cari request+item aktif untuk pasien+tes agar hasil terhubung ke order.
+ *
+ * Kalau ketemu LEBIH DARI SATU permintaan terbuka yang sama-sama minta tes
+ * ini (dan tidak ada preferItemId yang sudah memastikan pilihannya), JANGAN
+ * menebak yang mana -- lihat komentar lebih lengkap di
+ * services/instrumentListener.js (salinan yang sama dipakai jalur alat
+ * langsung, ini dipakai jalur /from-instrument dan entri manual).
+ */
 async function findRequestLink(patientId, testId, preferItemId) {
   if (preferItemId) {
     const [[it]] = await pool.query('SELECT id AS request_item_id, request_id FROM lab_request_items WHERE id = ?', [preferItemId]);
     if (it) return it;
   }
-  const [[row]] = await pool.query(
+  const [rows] = await pool.query(
     `SELECT lri.id AS request_item_id, lri.request_id
      FROM lab_request_items lri
      JOIN lab_requests lr ON lr.id = lri.request_id
      WHERE lr.patient_id = ? AND lri.test_id = ? AND lr.status <> 'cancelled'
-     ORDER BY lr.requested_at DESC LIMIT 1`,
+     ORDER BY lr.requested_at DESC LIMIT 2`,
     [patientId, testId]
   );
+  if (rows.length > 1) {
+    return { request_item_id: null, request_id: null, ambigu: true };
+  }
+  const row = rows[0];
   return { request_item_id: row?.request_item_id ?? null, request_id: row?.request_id ?? null };
 }
 
