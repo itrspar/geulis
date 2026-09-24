@@ -46,6 +46,97 @@ router.get('/count', authenticate, requirePermission('results.view'), async (_re
   res.json({ pending: r.n });
 });
 
+/**
+ * Hasil "yatim" -- beda dari unmatched_results di atas: pasiennya SUDAH
+ * ketemu (tersimpan di lab_results), cuma request_id-nya kosong karena tidak
+ * ada item permintaan terbuka yang test_id-nya cocok persis saat hasil
+ * masuk. Penyebab paling umum: kode tes SIMRS dipetakan ulang (menu
+ * Sinkronisasi Katalog) SETELAH permintaan dibuat -- item permintaan lama
+ * masih menunjuk test_id lama, sedangkan hasil dari alat sekarang bawa
+ * test_id baru. Tanpa halaman ini satu-satunya jalan petugas adalah hapus
+ * permintaan dan minta SIMRS kirim ulang.
+ *
+ * Didaftarkan SEBELUM GET /:id di bawah -- itu catch-all satu segmen path,
+ * dan akan menangkap /yatim (menganggap "yatim" sebagai :id) kalau tidak
+ * didahulukan.
+ */
+router.get('/yatim', authenticate, requirePermission('results.view'), async (_req, res) => {
+  const [rows] = await pool.query(`
+    SELECT r.id, r.patient_id, r.test_id, r.result_value, r.unit, r.flag, r.result_at,
+           p.name AS patient_name, p.medical_record_no,
+           lt.code AS test_code, lt.name AS test_name,
+           i.name AS instrument_name
+      FROM lab_results r
+      JOIN patients p ON p.id = r.patient_id
+      JOIN lab_tests lt ON lt.id = r.test_id
+      LEFT JOIN instruments i ON i.id = r.instrument_id
+     WHERE r.request_id IS NULL AND r.status = 'preliminary'
+     ORDER BY r.result_at DESC LIMIT 200
+  `);
+  res.json(rows);
+});
+
+router.get('/yatim/count', authenticate, requirePermission('results.view'), async (_req, res) => {
+  const [[r]] = await pool.query(
+    "SELECT COUNT(*) AS n FROM lab_results WHERE request_id IS NULL AND status = 'preliminary'"
+  );
+  res.json({ pending: r.n });
+});
+
+/** Permintaan terbuka milik pasien yang sama, untuk dropdown pemilihan. */
+router.get('/yatim/:id/permintaan', authenticate, requirePermission('results.view'), async (req, res) => {
+  const [[hasil]] = await pool.query('SELECT patient_id FROM lab_results WHERE id = ?', [req.params.id]);
+  if (!hasil) return res.status(404).json({ error: 'Hasil tidak ditemukan' });
+  const [rows] = await pool.query(
+    `SELECT id, request_no, simrs_order_id, status, requested_at
+       FROM lab_requests
+      WHERE patient_id = ? AND status NOT IN ('cancelled', 'completed')
+      ORDER BY requested_at DESC LIMIT 20`,
+    [hasil.patient_id]
+  );
+  res.json(rows);
+});
+
+/**
+ * Tautkan hasil yatim ke permintaan yang benar. Item permintaan untuk tes ini
+ * dicari dulu; kalau belum ada (permintaan dibuat sebelum tes ini termapping)
+ * dibuatkan baru -- prinsipnya sama seperti pemetaan otomatis di jalur alat.
+ */
+router.post('/yatim/:id/link', authenticate, requirePermission('results.manage'), async (req, res) => {
+  const { request_id } = req.body || {};
+  if (!request_id) return res.status(400).json({ error: 'request_id wajib diisi' });
+
+  const [[hasil]] = await pool.query(
+    "SELECT id, patient_id, test_id FROM lab_results WHERE id = ? AND request_id IS NULL AND status = 'preliminary'",
+    [req.params.id]
+  );
+  if (!hasil) return res.status(404).json({ error: 'Hasil tidak ditemukan atau sudah tertaut' });
+
+  const [[reqRow]] = await pool.query('SELECT id, patient_id FROM lab_requests WHERE id = ?', [request_id]);
+  if (!reqRow || reqRow.patient_id !== hasil.patient_id) {
+    return res.status(400).json({ error: 'Permintaan yang dipilih bukan milik pasien ini' });
+  }
+
+  let [[item]] = await pool.query(
+    `SELECT id FROM lab_request_items WHERE request_id = ? AND test_id = ?
+      ORDER BY (status <> 'done') DESC, id LIMIT 1`,
+    [reqRow.id, hasil.test_id]
+  );
+  let itemId = item?.id;
+  if (!itemId) {
+    const [ins] = await pool.query(
+      'INSERT INTO lab_request_items (request_id, test_id) VALUES (?, ?)',
+      [reqRow.id, hasil.test_id]
+    );
+    itemId = ins.insertId;
+  }
+
+  await pool.query('UPDATE lab_results SET request_id = ?, request_item_id = ? WHERE id = ?', [reqRow.id, itemId, hasil.id]);
+  await pool.query("UPDATE lab_request_items SET status = 'done' WHERE id = ?", [itemId]);
+  await audit(req, 'LINK', 'result', hasil.id, { request_id: reqRow.id, request_item_id: itemId });
+  res.json({ ok: true });
+});
+
 router.get('/:id', authenticate, requirePermission('results.view'), async (req, res) => {
   const [[row]] = await pool.query('SELECT * FROM unmatched_results WHERE id = ?', [req.params.id]);
   if (!row) return res.status(404).json({ error: 'Tidak ditemukan' });

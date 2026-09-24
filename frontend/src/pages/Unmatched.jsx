@@ -15,6 +15,8 @@ export default function Unmatched() {
   const [daftar, setDaftar] = useState([]);
   const [status, setStatus] = useState('pending');
   const [memuat, setMemuat] = useState(true);
+  const [yatim, setYatim] = useState([]);
+  const [memuatYatim, setMemuatYatim] = useState(true);
 
   const muat = async (s = status) => {
     setMemuat(true);
@@ -27,7 +29,62 @@ export default function Unmatched() {
     }
   };
 
+  const muatYatim = async () => {
+    setMemuatYatim(true);
+    try {
+      setYatim(await api.unmatched.yatim.list());
+    } catch (e) {
+      Swal.fire('Gagal memuat', e.message, 'error');
+    } finally {
+      setMemuatYatim(false);
+    }
+  };
+
   useEffect(() => { muat(status); }, [status]);
+  useEffect(() => { muatYatim(); }, []);
+
+  // Beda dari cocokkan() di atas: pasiennya sudah pasti (hasil ini SUDAH
+  // tersimpan di lab_results atas nama pasien yang benar), tinggal pilih
+  // permintaan terbuka mana yang cocok. Penyebab paling umum hasil sampai
+  // di sini: kode tes dipetakan ulang di menu Sinkronisasi Katalog SETELAH
+  // permintaannya dibuat, jadi item permintaan lama tidak pernah cocok
+  // dengan test_id baru yang dibawa hasil dari alat.
+  const tautkanYatim = async (h) => {
+    let permintaan = [];
+    try {
+      permintaan = await api.unmatched.yatim.permintaan(h.id);
+    } catch (e) {
+      return Swal.fire('Gagal memuat', e.message, 'error');
+    }
+    if (!permintaan.length) {
+      return Swal.fire('Tidak ada permintaan terbuka', `${h.patient_name} tidak punya permintaan lab yang masih terbuka. Buat permintaan barunya dulu di SIMRS/menu Permintaan Lab.`, 'info');
+    }
+
+    const pilihan = {};
+    permintaan.forEach((r) => {
+      pilihan[r.id] = `${r.request_no}${r.simrs_order_id ? ` (${r.simrs_order_id})` : ''} · ${new Date(r.requested_at).toLocaleString('id-ID')}`;
+    });
+
+    const { value: requestId } = await Swal.fire({
+      title: `Tautkan ${h.test_code} = ${h.result_value}`,
+      html: `Pasien: <b>${h.patient_name}</b> (RM ${h.medical_record_no || '-'})<br>Pilih permintaan yang seharusnya menerima hasil ini:`,
+      input: 'select',
+      inputOptions: pilihan,
+      showCancelButton: true,
+      confirmButtonText: 'Tautkan',
+      cancelButtonText: 'Batal',
+      inputValidator: (v) => (!v ? 'Pilih dulu permintaannya' : undefined),
+    });
+    if (!requestId) return;
+
+    try {
+      await api.unmatched.yatim.link(h.id, Number(requestId));
+      Swal.fire('Tertaut', 'Hasil sudah terhubung ke permintaan terpilih dan bisa ditarik SIMRS.', 'success');
+      muatYatim();
+    } catch (e) {
+      Swal.fire('Gagal', e.message, 'error');
+    }
+  };
 
   const cocokkan = async (baris) => {
     const { value: kata } = await Swal.fire({
@@ -248,6 +305,47 @@ export default function Unmatched() {
                       : b.note || '-'
                   )}
                 </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <div className="page-head" style={{ marginTop: '2rem' }}>
+        <h2>🔗 Hasil Tanpa Permintaan</h2>
+      </div>
+      <p className="keterangan">
+        Hasil di sini sudah pasti pemiliknya (pasien ketemu), tapi tidak tertaut ke
+        permintaan mana pun — biasanya karena kode tes dipetakan ulang <i>setelah</i>{' '}
+        permintaannya dibuat. Tautkan ke permintaan yang benar di sini; SIMRS tidak
+        bisa menarik hasil ini sampai ditautkan. Tidak perlu hapus &amp; buat ulang
+        permintaan.
+      </p>
+      {memuatYatim ? (
+        <p>Memuat...</p>
+      ) : !yatim.length ? (
+        <p className="kosong">Tidak ada hasil yang menggantung.</p>
+      ) : (
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Waktu</th>
+              <th>Pasien</th>
+              <th>Tes</th>
+              <th>Hasil</th>
+              <th>Alat</th>
+              <th>Tindakan</th>
+            </tr>
+          </thead>
+          <tbody>
+            {yatim.map((h) => (
+              <tr key={h.id}>
+                <td>{new Date(h.result_at).toLocaleString('id-ID')}</td>
+                <td>{h.patient_name} <span style={{ color: 'var(--muted)' }}>(RM {h.medical_record_no || '-'})</span></td>
+                <td>{h.test_name || h.test_code}</td>
+                <td>{h.result_value} {h.unit}</td>
+                <td>{h.instrument_name || '-'}</td>
+                <td><button className="btn-sm" onClick={() => tautkanYatim(h)}>Tautkan</button></td>
               </tr>
             ))}
           </tbody>

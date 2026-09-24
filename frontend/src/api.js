@@ -136,6 +136,14 @@ export const api = {
     get: (id) => request(`/unmatched/${id}`),
     match: (id, patient_id, request_id) => request(`/unmatched/${id}/match`, { method: 'POST', body: JSON.stringify({ patient_id, request_id }) }),
     discard: (id, note) => request(`/unmatched/${id}/discard`, { method: 'POST', body: JSON.stringify({ note }) }),
+    // Hasil yang pasiennya ketemu tapi tidak tertaut ke permintaan mana pun
+    // (mis. kode tes dipetakan ulang setelah permintaan dibuat).
+    yatim: {
+      list: () => request('/unmatched/yatim'),
+      count: () => request('/unmatched/yatim/count'),
+      permintaan: (id) => request(`/unmatched/yatim/${id}/permintaan`),
+      link: (id, request_id) => request(`/unmatched/yatim/${id}/link`, { method: 'POST', body: JSON.stringify({ request_id }) }),
+    },
   },
   qc: {
     list: () => request('/qc'),
