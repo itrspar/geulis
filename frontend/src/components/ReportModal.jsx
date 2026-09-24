@@ -199,6 +199,15 @@ export default function ReportModal({ patient, requestId, onClose }) {
                       {r.revision_count > 0 && (
                         <sup title={`Diperbaiki ${r.revision_count}x`}> R{r.revision_count}</sup>
                       )}
+                      {/* Khusus layar (no-print) -- untuk penelusuran admin
+                          saat ada keluhan "hasil tidak ketarik SIMRS":
+                          ID mentah yang diketik/dikirim di alat, beda dari
+                          nomor RM/permintaan resminya kalau salah ketik. */}
+                      {r.sample_id_asal && (
+                        <div className="no-print" style={{ fontSize: '0.7rem', color: 'var(--muted)', fontWeight: 'normal' }} title="ID yang dikirim alat (bukan hasil resmi laporan)">
+                          🔌 ID alat: {r.sample_id_asal}{r.instrument_name ? ` (${r.instrument_name})` : ''}
+                        </div>
+                      )}
                     </td>
                     <td>{r.unit || '-'}</td>
                     <td>{rentangRujukan(r, patient.gender)}</td>
