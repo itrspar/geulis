@@ -149,12 +149,35 @@ router.delete('/maps/:mapId', authenticate, requirePermission('instruments.manag
   res.json({ ok: true });
 });
 
+/**
+ * Log mentah lalu lintas alat -- dulu cuma 50 baris terbaru tanpa filter,
+ * dengan cuplikan 100 karakter yang tidak cukup untuk ditelusuri sungguhan.
+ * Sekarang bisa disaring per alat/status/rentang tanggal/kata kunci, supaya
+ * admin bisa mengevaluasi apa yang SEBENARNYA dikirim alat tanpa perlu ke
+ * layar alatnya langsung -- mis. saat ada keluhan "hasil tidak masuk" atau
+ * "salah pasien", raw_data di sini adalah rekaman apa adanya, bukan hasil
+ * yang sudah diolah.
+ */
 router.get('/logs/recent', authenticate, requirePermission('instruments.view'), async (req, res) => {
-  const [rows] = await pool.query(
-    `SELECT l.*, i.name AS instrument_name FROM instrument_logs l
-     LEFT JOIN instruments i ON i.id = l.instrument_id
-     ORDER BY l.created_at DESC LIMIT 50`
-  );
+  const { instrument_id, status, q, from, to } = req.query;
+  const kondisi = [];
+  const params = [];
+  if (instrument_id) { kondisi.push('l.instrument_id = ?'); params.push(instrument_id); }
+  if (status) { kondisi.push('l.parsed_status = ?'); params.push(status); }
+  if (q) { kondisi.push('l.raw_data LIKE ?'); params.push(`%${q}%`); }
+  if (from) { kondisi.push('l.created_at >= ?'); params.push(`${from} 00:00:00`); }
+  if (to) { kondisi.push('l.created_at <= ?'); params.push(`${to} 23:59:59`); }
+
+  // Batas dinaikkan dari 50 menjadi 200 untuk kebutuhan evaluasi (butuh
+  // menelusuri beberapa hari ke belakang), tetap dibatasi supaya tidak
+  // menarik seluruh tabel tanpa sengaja.
+  const limit = Math.min(Number(req.query.limit) || 200, 500);
+  let sql = `SELECT l.*, i.name AS instrument_name FROM instrument_logs l
+             LEFT JOIN instruments i ON i.id = l.instrument_id`;
+  if (kondisi.length) sql += ' WHERE ' + kondisi.join(' AND ');
+  sql += ' ORDER BY l.created_at DESC LIMIT ' + limit;
+
+  const [rows] = await pool.query(sql, params);
   res.json(rows);
 });
 

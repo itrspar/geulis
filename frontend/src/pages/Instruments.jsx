@@ -23,6 +23,7 @@ export default function Instruments() {
   const { can } = useAuth();
   const [list, setList] = useState([]);
   const [logs, setLogs] = useState([]);
+  const [logFilter, setLogFilter] = useState({ instrument_id: '', status: '', q: '', from: '', to: '' });
   const [tests, setTests] = useState([]);
   const [selected, setSelected] = useState(null);
   const [maps, setMaps] = useState([]);
@@ -54,9 +55,30 @@ export default function Instruments() {
   const [profilId, setProfilId] = useState('');
   const [showMapForm, setShowMapForm] = useState(false);
 
+  const muatLog = (filter = logFilter) => api.instruments.logs(filter).then(setLogs);
+
+  // Bahan evaluasi: isi lengkap raw_data (bukan potongan 100 karakter di
+  // tabel) plus error_message kalau parsing gagal -- ini rekaman apa adanya
+  // dari alat, jadi admin bisa menelusuri tanpa perlu ke layar alat sama
+  // sekali.
+  const lihatLog = (l) => {
+    Swal.fire({
+      title: `${l.instrument_name || 'Tidak dikenal'} — ${new Date(l.created_at).toLocaleString('id-ID')}`,
+      width: 640,
+      html: `
+        <div style="text-align:left">
+          <p style="margin:0 0 .5rem"><b>Arah:</b> ${l.direction === 'out' ? 'LIS → alat' : 'alat → LIS'} ·
+             <b>Status:</b> <span class="badge ${l.parsed_status}">${l.parsed_status}</span></p>
+          ${l.error_message ? `<p style="margin:0 0 .5rem;color:#dc2626"><b>Error:</b> ${l.error_message}</p>` : ''}
+          <pre style="white-space:pre-wrap;word-break:break-all;background:var(--surface2,#1a1a1a);color:var(--text,#eee);padding:.75rem;border-radius:6px;max-height:50vh;overflow:auto;font-size:.8rem;text-align:left">${(l.raw_data || '').replace(/</g, '&lt;')}</pre>
+        </div>`,
+      confirmButtonText: 'Tutup',
+    });
+  };
+
   const load = () => {
     api.instruments.list().then(setList);
-    api.instruments.logs().then(setLogs);
+    muatLog();
     api.tests.list().then(setTests);
     api.instruments.profiles().then(setProfiles).catch(() => {});
     if (can('mapping.view')) {
@@ -494,18 +516,54 @@ export default function Instruments() {
           <div className="card" style={{ marginTop: '1.25rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
               <h2 className="section-title" style={{ margin: 0 }}>Log pesan alat</h2>
-              <button type="button" className="btn-sm secondary" onClick={() => api.instruments.logs().then(setLogs)}>🔄 Refresh Log</button>
+              <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Rekaman apa adanya dari alat -- bahan telusur/evaluasi tanpa perlu ke layar alat</span>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem', alignItems: 'flex-end' }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label>Alat</label>
+                <select value={logFilter.instrument_id} onChange={(e) => setLogFilter({ ...logFilter, instrument_id: e.target.value })}>
+                  <option value="">Semua alat</option>
+                  {list.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+                </select>
+              </div>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label>Status</label>
+                <select value={logFilter.status} onChange={(e) => setLogFilter({ ...logFilter, status: e.target.value })}>
+                  <option value="">Semua status</option>
+                  <option value="ok">ok</option>
+                  <option value="error">error</option>
+                  <option value="partial">partial</option>
+                </select>
+              </div>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label>Dari tanggal</label>
+                <input type="date" value={logFilter.from} onChange={(e) => setLogFilter({ ...logFilter, from: e.target.value })} />
+              </div>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label>Sampai tanggal</label>
+                <input type="date" value={logFilter.to} onChange={(e) => setLogFilter({ ...logFilter, to: e.target.value })} />
+              </div>
+              <div className="form-group" style={{ margin: 0, flex: 1, minWidth: '10rem' }}>
+                <label>Cari isi pesan</label>
+                <input type="text" placeholder="mis. nomor RM, kode tes..." value={logFilter.q} onChange={(e) => setLogFilter({ ...logFilter, q: e.target.value })} />
+              </div>
+              <button type="button" className="btn-sm" onClick={() => muatLog()}>🔍 Cari</button>
+              <button type="button" className="btn-sm secondary" onClick={() => { const kosong = { instrument_id: '', status: '', q: '', from: '', to: '' }; setLogFilter(kosong); muatLog(kosong); }}>Reset</button>
             </div>
             <div style={{ overflowX: 'auto' }}>
             <table>
-              <thead><tr><th>Waktu</th><th>Alat</th><th>Status</th><th>Preview</th></tr></thead>
+              <thead><tr><th>Waktu</th><th>Alat</th><th>Arah</th><th>Status</th><th>Preview</th><th></th></tr></thead>
               <tbody>
-                {logs.map((l) => (
+                {logs.length === 0 ? (
+                  <tr><td colSpan={6} style={{ textAlign: 'center', padding: '1rem', color: 'var(--muted)' }}>Tidak ada log yang cocok.</td></tr>
+                ) : logs.map((l) => (
                   <tr key={l.id}>
                     <td>{new Date(l.created_at).toLocaleString('id-ID')}</td>
                     <td>{l.instrument_name || '—'}</td>
+                    <td>{l.direction === 'out' ? 'LIS → alat' : 'alat → LIS'}</td>
                     <td><span className={`badge ${l.parsed_status}`}>{l.parsed_status}</span></td>
                     <td className="log-preview">{(l.raw_data || '').slice(0, 100)}</td>
+                    <td><button className="btn-sm secondary" type="button" onClick={() => lihatLog(l)}>👁️ Lihat</button></td>
                   </tr>
                 ))}
               </tbody>

@@ -218,7 +218,10 @@ export const api = {
     maps: (id) => request(`/instruments/${id}/maps`),
     addMap: (id, body) => request(`/instruments/${id}/maps`, { method: 'POST', body: JSON.stringify(body) }),
     deleteMap: (mapId) => request(`/instruments/maps/${mapId}`, { method: 'DELETE' }),
-    logs: () => request('/instruments/logs/recent'),
+    logs: (filter = {}) => {
+      const qs = new URLSearchParams(Object.fromEntries(Object.entries(filter).filter(([, v]) => v))).toString();
+      return request(`/instruments/logs/recent${qs ? `?${qs}` : ''}`);
+    },
     reload: () => request('/instruments/reload', { method: 'POST' }),
     profiles: () => request('/instruments/profiles'),
     applyProfile: (body) => request('/instruments/apply-profile', { method: 'POST', body: JSON.stringify(body) }),
