@@ -86,7 +86,71 @@ export default function Unmatched() {
     }
   };
 
+  // Tawarkan saran berperingkat dulu sebelum pencarian manual -- kandidat
+  // yang lebih mungkin (RM/nomor permintaan mirip nomor sampel yang diketik,
+  // dan/atau permintaannya minta jenis pemeriksaan yang sama dengan yang
+  // dikirim alat) muncul lebih dulu. Petugas TETAP yang memilih dan
+  // menegaskan -- tidak ada yang ditautkan otomatis, cuma urutannya dibantu.
   const cocokkan = async (baris) => {
+    let saran = [];
+    try {
+      saran = await api.unmatched.saran(baris.id);
+    } catch (e) {
+      console.error(e);
+    }
+
+    if (saran.length) {
+      const pilihan = {};
+      saran.forEach((s) => {
+        const tanda = [];
+        if (s.rm_persis) tanda.push('RM sama persis');
+        else if (s.id_mirip) tanda.push('ID mirip nomor sampel');
+        if (s.tes_cocok > 0) tanda.push(`${s.tes_cocok} jenis pemeriksaan sama`);
+        pilihan[`${s.patient_id}:${s.request_id}`] =
+          `${s.patient_name} — RM ${s.medical_record_no || '-'} · ${s.request_no}` +
+          (tanda.length ? ` (${tanda.join(', ')})` : '');
+      });
+      pilihan.manual = '🔍 Bukan salah satu di atas — cari manual';
+
+      const { value, isDismissed } = await Swal.fire({
+        title: `Sampel ${baris.sample_id}`,
+        html: 'Saran diurutkan dari yang paling mungkin (kemiripan nomor & kesamaan jenis pemeriksaan). Periksa dulu sebelum memilih.',
+        input: 'select',
+        inputOptions: pilihan,
+        showCancelButton: true,
+        confirmButtonText: 'Lanjut',
+        cancelButtonText: 'Batal',
+        inputValidator: (v) => (!v ? 'Pilih salah satu' : undefined),
+      });
+      if (isDismissed || !value) return;
+
+      if (value !== 'manual') {
+        const [patientId, requestId] = value.split(':').map(Number);
+        const nama = pilihan[value];
+        const tegas = await Swal.fire({
+          title: 'Sudah yakin?',
+          html: `${baris.jumlah_parameter} hasil dari sampel <b>${baris.sample_id}</b> akan dicatat atas nama:<br><b>${nama}</b>`,
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonText: 'Ya, catat',
+          cancelButtonText: 'Batal',
+        });
+        if (!tegas.isConfirmed) return;
+        try {
+          const out = await api.unmatched.match(baris.id, patientId, requestId);
+          await Swal.fire('Tercatat', `${out.tersimpan} hasil masuk${out.tertaut ? ` (${out.tertaut} tertaut ke permintaan)` : ''}.`, 'success');
+          muat();
+        } catch (e) {
+          Swal.fire('Gagal', e.message, 'error');
+        }
+        return;
+      }
+    }
+
+    return cocokkanManual(baris);
+  };
+
+  const cocokkanManual = async (baris) => {
     const { value: kata } = await Swal.fire({
       title: `Sampel ${baris.sample_id}`,
       input: 'text',

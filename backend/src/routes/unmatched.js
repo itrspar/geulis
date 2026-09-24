@@ -144,6 +144,60 @@ router.get('/:id', authenticate, requirePermission('results.view'), async (req, 
 });
 
 /**
+ * Saran pasien/permintaan untuk satu hasil belum cocok, diberi peringkat --
+ * TIDAK PERNAH menautkan sendiri, cuma mengurutkan kandidat paling mungkin
+ * ke atas supaya petugas lebih cepat menemukan yang benar lewat POST
+ * /:id/match seperti biasa. Sengaja begini, bukan auto-tautkan: dua pasien
+ * berbeda bisa sama-sama sedang diminta pemeriksaan yang sama, jadi
+ * "paket tesnya mirip" saja BUKAN bukti identitas -- ini pelajaran dari
+ * insiden pendaftaran otomatis sebelumnya (lihat komentar di
+ * instrumentListener.js). Keputusan akhir selalu manusia.
+ *
+ * Dua sinyal, keduanya dicetak balik supaya petugas tahu ALASANNYA, bukan
+ * skor buram: (1) nomor sampel yang diketik di alat mirip/sama dengan RM
+ * pasien atau nomor permintaannya -- kemungkinan salah kolom, bukan salah
+ * pasien; (2) permintaan itu punya item untuk tes yang sama dengan yang
+ * dikirim alat.
+ */
+router.get('/:id/saran', authenticate, requirePermission('results.view'), async (req, res) => {
+  const [[row]] = await pool.query('SELECT * FROM unmatched_results WHERE id = ?', [req.params.id]);
+  if (!row) return res.status(404).json({ error: 'Tidak ditemukan' });
+
+  const payload = typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload || [];
+  const kodeAlat = [...new Set(payload.map((p) => p.test_code).filter(Boolean))];
+
+  let testIds = [];
+  if (row.instrument_id && kodeAlat.length) {
+    const [rows] = await pool.query(
+      'SELECT DISTINCT test_id FROM instrument_test_map WHERE instrument_id = ? AND instrument_test_code IN (?)',
+      [row.instrument_id, kodeAlat]
+    );
+    testIds = rows.map((r) => r.test_id);
+  }
+
+  const sampleId = String(row.sample_id || '');
+  const mirip = `%${sampleId}%`;
+
+  const [kandidat] = await pool.query(
+    `SELECT p.id AS patient_id, p.name AS patient_name, p.medical_record_no,
+            lr.id AS request_id, lr.request_no, lr.simrs_order_id, lr.requested_at,
+            (p.medical_record_no = ?) AS rm_persis,
+            (p.medical_record_no LIKE ? OR ? LIKE CONCAT('%', p.medical_record_no, '%')
+              OR lr.request_no LIKE ? OR (lr.simrs_order_id IS NOT NULL AND lr.simrs_order_id LIKE ?)) AS id_mirip,
+            (SELECT COUNT(DISTINCT lri.test_id) FROM lab_request_items lri
+              WHERE lri.request_id = lr.id AND lri.test_id IN (?)) AS tes_cocok
+       FROM lab_requests lr
+       JOIN patients p ON p.id = lr.patient_id
+      WHERE lr.status NOT IN ('completed', 'cancelled')
+      ORDER BY rm_persis DESC, tes_cocok DESC, id_mirip DESC, lr.requested_at DESC
+      LIMIT 15`,
+    [sampleId, mirip, sampleId, mirip, mirip, testIds.length ? testIds : [0]]
+  );
+
+  res.json(kandidat.map((k) => ({ ...k, rm_persis: !!k.rm_persis, id_mirip: !!k.id_mirip })));
+});
+
+/**
  * Cocokkan ke satu pasien -- dan, kalau ada, ke satu PERMINTAAN spesifik
  * milik pasien itu. Baru di sinilah hasilnya benar-benar masuk lab_results,
  * lengkap dengan flag dan delta check yang dihitung ulang memakai identitas

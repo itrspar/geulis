@@ -134,6 +134,7 @@ export const api = {
     list: (status = 'pending') => request(`/unmatched?status=${status}`),
     count: () => request('/unmatched/count'),
     get: (id) => request(`/unmatched/${id}`),
+    saran: (id) => request(`/unmatched/${id}/saran`),
     match: (id, patient_id, request_id) => request(`/unmatched/${id}/match`, { method: 'POST', body: JSON.stringify({ patient_id, request_id }) }),
     discard: (id, note) => request(`/unmatched/${id}/discard`, { method: 'POST', body: JSON.stringify({ note }) }),
     // Hasil yang pasiennya ketemu tapi tidak tertaut ke permintaan mana pun
