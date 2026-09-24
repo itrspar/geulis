@@ -97,9 +97,16 @@ export default function Layout() {
   });
   const kategoriAktif = kategori.find((k) => k.items.some((it) => it.path === location.pathname))?.judul;
   const sedangTerbuka = (judul) => {
-    if (judul === kategoriAktif) return true;            // kategori halaman aktif selalu terbuka
-    if (lipat[judul] !== undefined) return !lipat[judul]; // pilihan pengguna (true = terlipat)
-    return judul === 'Utama';                            // bawaan: hanya Utama terbuka
+    // Pilihan pengguna yang EKSPLISIT selalu menang -- termasuk saat sedang
+    // berada di halaman kategori itu sendiri. Sebelumnya kategori aktif
+    // dipaksa selalu terbuka di urutan pertama, jadi tombol lipat pada
+    // kategori halaman yang sedang dibuka terlihat tidak berfungsi sama
+    // sekali (klik tersimpan ke localStorage, tapi kembali dibuka paksa di
+    // render berikutnya) -- termasuk setelah refresh, karena halaman aktifnya
+    // tetap sama.
+    if (lipat[judul] !== undefined) return !lipat[judul]; // true = terlipat
+    if (judul === kategoriAktif) return true;              // belum pernah disentuh -> buka kategori aktif
+    return judul === 'Utama';                              // bawaan: hanya Utama terbuka
   };
   const toggleLipat = (judul) => {
     const target = !sedangTerbuka(judul); // status terbuka yang diinginkan
