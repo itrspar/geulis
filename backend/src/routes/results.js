@@ -392,7 +392,7 @@ router.post('/from-instrument', authenticate, requirePermission('results.manage'
              verified_at = CASE WHEN result_value <=> ? THEN verified_at ELSE NULL END,
              authorized_by = CASE WHEN result_value <=> ? THEN authorized_by ELSE NULL END,
              authorized_at = CASE WHEN result_value <=> ? THEN authorized_at ELSE NULL END,
-             request_id=COALESCE(request_id, ?)
+             request_id=COALESCE(request_id, ?), sample_id_asal=?
          WHERE id=?`,
         [
           item.value,
@@ -407,14 +407,15 @@ router.post('/from-instrument', authenticate, requirePermission('results.manage'
           item.value,
           item.value,
           link.request_id,
+          sample_id || null,
           existingResult.id,
         ]
       );
       saved.push(existingResult.id);
     } else {
       const [r] = await pool.query(
-        `INSERT INTO lab_results (patient_id, test_id, request_id, request_item_id, result_value, result_numeric, unit, flag, instrument_id, raw_message, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'preliminary')`,
+        `INSERT INTO lab_results (patient_id, test_id, request_id, request_item_id, result_value, result_numeric, unit, flag, instrument_id, raw_message, status, sample_id_asal)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'preliminary', ?)`,
         [
           patient.id,
           map.test_id,
@@ -426,6 +427,7 @@ router.post('/from-instrument', authenticate, requirePermission('results.manage'
           flag,
           instrument_id,
           JSON.stringify(item),
+          sample_id || null,
         ]
       );
       saved.push(r.insertId);

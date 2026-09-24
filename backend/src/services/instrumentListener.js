@@ -233,8 +233,8 @@ async function saveInstrumentResults(instrumentId, protocol, sampleId, results, 
     // sebelumnya dan bukan hasil ini sendiri.
     const delta = await hitungDelta(patientId, testId, item.value, test?.code, test?.delta_limit_percent);
     const [insertResult] = await pool.query(
-      `INSERT INTO lab_results (patient_id, test_id, request_id, request_item_id, result_value, result_numeric, unit, flag, instrument_id, raw_message, status, delta_percent, delta_flag)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'preliminary', ?, ?)`,
+      `INSERT INTO lab_results (patient_id, test_id, request_id, request_item_id, result_value, result_numeric, unit, flag, instrument_id, raw_message, status, delta_percent, delta_flag, sample_id_asal)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'preliminary', ?, ?, ?)`,
       [
         patientId,
         testId,
@@ -248,6 +248,7 @@ async function saveInstrumentResults(instrumentId, protocol, sampleId, results, 
         raw.slice(0, 5000),
         delta?.percent ?? null,
         delta?.flag ?? 'none',
+        sampleId || null,
       ]
     );
     if (delta?.flag === 'check') {

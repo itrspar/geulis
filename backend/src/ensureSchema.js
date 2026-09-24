@@ -60,6 +60,12 @@ export async function ensureSchema() {
   await pool.query("UPDATE lab_tests SET sort_order = id WHERE sort_order = 999 OR sort_order IS NULL").catch(() => {});
 
   await ensureColumn('lab_results', 'request_id', 'ADD COLUMN request_id INT NULL AFTER request_item_id');
+  // Identitas mentah (Sample ID/Patient ID) yang dikirim alat, terlepas dari
+  // hasil resolusinya berhasil atau tidak. Dipakai untuk field
+  // sample_id_terkirim di GET /bridging/result (orphan_candidates) --
+  // supaya petugas SIMRS bisa lihat kalau memang salah kolom yang diketik
+  // di alat, bukan cuma "ada hasil yatim" tanpa konteks.
+  await ensureColumn('lab_results', 'sample_id_asal', 'ADD COLUMN sample_id_asal VARCHAR(100) NULL');
   await ensureColumn('lab_results', 'critical_ack', "ADD COLUMN critical_ack TINYINT(1) DEFAULT 0");
   await ensureColumn('lab_results', 'critical_ack_by', 'ADD COLUMN critical_ack_by INT NULL');
   await ensureColumn('lab_results', 'critical_ack_at', 'ADD COLUMN critical_ack_at TIMESTAMP NULL');

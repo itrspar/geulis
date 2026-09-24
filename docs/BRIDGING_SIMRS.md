@@ -227,7 +227,20 @@ sebelumnya.
     }
   ],
   "unverified_count": 0,
-  "needs_report_count": 0
+  "needs_report_count": 0,
+  "orphan_candidates": [
+    {
+      "result_id": 1234,
+      "test_code": "TSH",
+      "test_name": "TSH",
+      "result_value": "12.5",
+      "unit": "uIU/ml",
+      "instrument_name": "iChroma II",
+      "sample_id_terkirim": "666666",
+      "received_at": "2026-09-24 10:15:00",
+      "skor_kecocokan": "rm_persis"
+    }
+  ]
 }
 ```
 
@@ -259,6 +272,27 @@ menerus di latar belakang, notifnya cukup muncul reaktif pada saat SIMRS
 sendiri sedang meminta data itu. Tidak berlaku sebagai pengganti webhook
 `/notifikasi-kritis` (§6b): itu untuk kasus kritis yang harus diketahui
 SEGERA meski tidak ada yang sedang membuka layar hasil sama sekali.
+
+**`orphan_candidates`** — hasil "yatim" (dari instrumen, pasiennya ketemu
+tapi belum tertaut ke permintaan mana pun — lihat §6c) milik **pasien order
+ini saja**, yang order ini sendiri kandidat sah untuk ditautkan. Kriteria
+"kandidat sah" (sama dengan yang dipakai menu Hasil Belum Cocok di LIS):
+
+- `rm_persis` — nomor identitas yang dikirim alat sama persis dengan RM
+  pasien ini.
+- `mirip` — RM/nomor permintaan/`simrs_order_id` mengandung atau terkandung
+  dalam identitas yang dikirim alat (indikasi salah kolom, bukan salah
+  pasien).
+- `tes_cocok` — order ini punya item untuk jenis pemeriksaan yang sama
+  dengan hasil yatim itu.
+
+`skor_kecocokan` berisi salah satu dari tiga alasan di atas (prioritas
+`rm_persis` > `mirip` > `tes_cocok`), buat ditampilkan sebagai alasan ke
+petugas, BUKAN untuk disimpulkan sendiri sebagai jaminan kebenaran —
+tetap tampilkan seluruh field (`test_name`, `result_value`,
+`sample_id_terkirim`, dst.) supaya petugas yang menilai, dan minta
+konfirmasi eksplisit sebelum memanggil `POST /result/{result_id}/match`
+di bawah. Selalu array, kosong (`[]`) kalau tidak ada kandidat.
 
 ### POST `/api/bridging/result/{result_id}/verify`
 
@@ -312,6 +346,53 @@ Error yang mungkin muncul:
 | `403` | `simrs_user_id` belum dipetakan / akun GeuLIS nonaktif | Minta admin LIS memetakan akun via menu Mapping SIMRS |
 | `404` | `result_id` tidak ditemukan | — |
 | `409` | Hasil sudah `final`/`corrected`, tidak bisa diverifikasi ulang lewat jalur ini | Sembunyikan tombol verifikasi untuk hasil yang statusnya sudah `completed` |
+
+### POST `/api/bridging/result/{result_id}/match`
+
+Tautkan hasil "yatim" ke permintaan yang benar, langsung dari SIMRS —
+`result_id` dari `orphan_candidates` pada `GET /result` di atas, dipanggil
+setelah petugas mengonfirmasi salah satu kandidat yang ditampilkan.
+
+**Prasyarat**: sama seperti `/verify` — `simrs_user_id` sudah dipetakan
+(`403` kalau belum). Menautkan hasil ke pasien/permintaan adalah keputusan
+klinis, harus tercatat atas nama satu petugas.
+
+Body:
+
+```json
+{
+  "simrs_order_id": "016/RSPAR/LABPK/IX/17/2026",
+  "simrs_user_id": "198501012010011001"
+}
+```
+
+- `simrs_order_id` — order yang dipilih petugas dari daftar
+  `orphan_candidates`. **GeuLIS memverifikasi ulang** bahwa order ini
+  benar-benar kandidat sah untuk `result_id` itu (kriteria sama seperti
+  `orphan_candidates` di atas) — SIMRS tidak bisa menautkan ke order
+  sembarangan hanya dengan mengarang `simrs_order_id`, walau tahu
+  `result_id`-nya.
+- `simrs_user_id` — wajib, sama seperti `/verify`.
+
+Sukses (`200`):
+
+```json
+{ "ok": true, "matched_by": "andi.analis", "request_no": "REQ20260924982455" }
+```
+
+Hasil masih berstatus `preliminary` setelah ditautkan — belum otomatis
+terverifikasi. Panggil `GET /result` sekali lagi (sesuai pola `ambil()`
+yang sudah ada) untuk melihatnya di `results[]` dan memverifikasinya lewat
+`/verify` seperti biasa.
+
+Error yang mungkin muncul:
+
+| Status | Kapan | Tindakan SIMRS |
+|---|---|---|
+| `400` | `simrs_order_id` kosong, bukan milik pasien yang sama, atau bukan kandidat sah | Tampilkan ulang daftar `orphan_candidates` terkini (`GET /result`), jangan asumsikan daftar lama masih berlaku |
+| `403` | `simrs_user_id` belum dipetakan | Minta admin LIS memetakan akun via menu Mapping SIMRS |
+| `404` | `result_id` tidak ditemukan, atau sudah tertaut sebelumnya | Muat ulang `GET /result` — kemungkinan sudah ditautkan petugas lain atau lewat LIS langsung |
+| `409` | Hasil ditautkan petugas lain tepat di antara `GET /result` dan panggilan ini | Muat ulang, kandidat yang sama kemungkinan sudah hilang dari daftar |
 
 ### §6b. Webhook `POST {simrs_base_url}/notifikasi-kritis` — **SIMRS yang mengimplementasikan, GeuLIS yang memanggil**
 

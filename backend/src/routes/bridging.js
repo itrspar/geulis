@@ -5,6 +5,7 @@ import { audit } from '../services/audit.js';
 import { genRequestNo } from '../services/requestNo.js';
 import { pushRequestResultsToSimrs } from '../services/simrsPush.js';
 import { rujukanBerlaku, labelRujukan, umurHari, kosongkanCacheRujukan, SUMBER_SIMRS } from '../services/rujukanUmur.js';
+import { kecocokanRequest, skorKecocokan } from '../services/kecocokanHasil.js';
 
 /** Umur dalam hari dari {nilai, satuan}. Satuan mengikuti konvensi menu
  *  Nilai Rujukan GeuLIS sendiri (hari/bulan/tahun) -- supaya SIMRS tidak
@@ -390,6 +391,42 @@ router.get('/result/:simrs_order_id', async (req, res) => {
     const unverifiedCount = formattedResults.filter((r) => r.status === 'preliminary').length;
     const needsReportCount = formattedResults.filter((r) => r.needs_report_before_verify).length;
 
+    // Hasil "yatim" (lihat commit 8d4af43/efcc394) milik PASIEN INI SAJA --
+    // JANGAN pernah cari lintas pasien di sini, satu API key dipakai untuk
+    // semua order jadi ini gampang bocor data pasien lain kalau kesaring
+    // salah. Dari situ, sertakan cuma yang order INI benar-benar jadi
+    // kandidat sah (rm_persis/id_mirip/tes_cocok, formula sama seperti
+    // GET /unmatched/:id/saran di LIS) -- bukan seluruh hasil yatim pasien
+    // ini tanpa pandang bulu.
+    const [yatimRows] = await pool.query(
+      `SELECT res.id AS result_id, res.test_id, res.result_value, res.unit, res.sample_id_asal, res.result_at,
+              lt.code AS test_code, lt.name AS test_name, i.name AS instrument_name
+         FROM lab_results res
+         JOIN lab_tests lt ON lt.id = res.test_id
+         LEFT JOIN instruments i ON i.id = res.instrument_id
+        WHERE res.patient_id = ? AND res.request_id IS NULL AND res.status = 'preliminary'`,
+      [requestData.patient_id]
+    );
+    const orphanCandidates = [];
+    for (const y of yatimRows) {
+      const sinyal = await kecocokanRequest(
+        { medicalRecordNo: requestData.medical_record_no, sampleIdAsal: y.sample_id_asal, testId: y.test_id },
+        { id: requestData.id, request_no: requestData.request_no, simrs_order_id: requestData.simrs_order_id }
+      );
+      if (!sinyal.cocok) continue;
+      orphanCandidates.push({
+        result_id: y.result_id,
+        test_code: y.test_code,
+        test_name: y.test_name,
+        result_value: y.result_value,
+        unit: y.unit,
+        instrument_name: y.instrument_name,
+        sample_id_terkirim: y.sample_id_asal,
+        received_at: y.result_at,
+        skor_kecocokan: skorKecocokan(sinyal),
+      });
+    }
+
     res.json({
       simrs_order_id: requestData.simrs_order_id,
       request_no: requestData.request_no,
@@ -408,6 +445,11 @@ router.get('/result/:simrs_order_id', async (req, res) => {
       // muka pada dialog verifikasi, bukan menunggu 400 dari server dulu.
       unverified_count: unverifiedCount,
       needs_report_count: needsReportCount,
+      // Selalu array, kosong kalau tidak ada -- sama seperti unmapped_tests.
+      // Tautkan lewat POST /result/{result_id}/match, BUKAN dengan menulis
+      // request_id secara langsung dari SIMRS manapun -- server memverifikasi
+      // ulang kandidatnya di sana, tidak percaya begitu saja klaim SIMRS.
+      orphan_candidates: orphanCandidates,
     });
 
   } catch (err) {
@@ -494,6 +536,86 @@ router.post('/result/:id/verify', resolveSimrsUser, requirePermission('results.m
     res.json({ ok: true, verified_by: req.user.username, push });
   } catch (err) {
     res.status(500).json({ error: 'Gagal memverifikasi hasil', details: err.message });
+  }
+});
+
+/**
+ * POST /bridging/result/:id/match
+ *
+ * Tautkan hasil "yatim" (`request_id` NULL, lihat commit 8d4af43/efcc394)
+ * ke permintaan yang benar, LANGSUNG dari SIMRS -- tanpa buka LIS sama
+ * sekali. `:id` adalah result_id dari `orphan_candidates` pada respons
+ * GET /result di atas.
+ *
+ * Body: { simrs_order_id (wajib), simrs_user_id (wajib, lihat resolveSimrsUser) }
+ *
+ * Server memverifikasi ULANG bahwa simrs_order_id yang diklaim memang
+ * kandidat sah untuk hasil ini (formula sama seperti orphan_candidates/
+ * GET /unmatched/:id/saran) -- TIDAK pernah percaya begitu saja apa yang
+ * dikirim SIMRS. Tanpa ini, siapa pun yang pegang API key bridging (satu
+ * kunci dipakai semua order) bisa menautkan hasil ke order sembarangan
+ * lewat panggilan API langsung, melewati tampilan orphan_candidates sama
+ * sekali.
+ */
+router.post('/result/:id/match', resolveSimrsUser, requirePermission('results.manage'), async (req, res) => {
+  const { simrs_order_id } = req.body || {};
+  if (!simrs_order_id) return res.status(400).json({ error: 'simrs_order_id wajib diisi.' });
+
+  try {
+    const [[hasil]] = await pool.query(
+      "SELECT id, patient_id, test_id, sample_id_asal FROM lab_results WHERE id = ? AND request_id IS NULL AND status = 'preliminary'",
+      [req.params.id]
+    );
+    if (!hasil) return res.status(404).json({ error: 'Hasil tidak ditemukan atau sudah tertaut.' });
+
+    const [[permintaan]] = await pool.query(
+      'SELECT id, patient_id, request_no, simrs_order_id FROM lab_requests WHERE simrs_order_id = ?',
+      [simrs_order_id]
+    );
+    if (!permintaan) return res.status(404).json({ error: 'simrs_order_id tidak ditemukan.' });
+    if (permintaan.patient_id !== hasil.patient_id) {
+      return res.status(400).json({ error: 'Permintaan itu bukan milik pasien yang sama dengan hasil ini.' });
+    }
+
+    const [[pasien]] = await pool.query('SELECT medical_record_no FROM patients WHERE id = ?', [hasil.patient_id]);
+    const sinyal = await kecocokanRequest(
+      { medicalRecordNo: pasien?.medical_record_no, sampleIdAsal: hasil.sample_id_asal, testId: hasil.test_id },
+      permintaan
+    );
+    if (!sinyal.cocok) {
+      return res.status(400).json({ error: 'simrs_order_id itu bukan kandidat sah untuk hasil ini -- periksa ulang lewat GET /result (orphan_candidates).' });
+    }
+
+    let [[item]] = await pool.query(
+      `SELECT id FROM lab_request_items WHERE request_id = ? AND test_id = ?
+        ORDER BY (status <> 'done') DESC, id LIMIT 1`,
+      [permintaan.id, hasil.test_id]
+    );
+    let itemId = item?.id;
+    if (!itemId) {
+      const [ins] = await pool.query(
+        'INSERT INTO lab_request_items (request_id, test_id) VALUES (?, ?)',
+        [permintaan.id, hasil.test_id]
+      );
+      itemId = ins.insertId;
+    }
+
+    // WHERE request_id IS NULL di sini bukan sekadar jaga-jaga -- ini yang
+    // menjamin aman kalau dua petugas beda workstation kebetulan menautkan
+    // hasil yang sama nyaris bersamaan (409 untuk yang kalah race).
+    const [upd] = await pool.query(
+      "UPDATE lab_results SET request_id = ?, request_item_id = ? WHERE id = ? AND request_id IS NULL AND status = 'preliminary'",
+      [permintaan.id, itemId, hasil.id]
+    );
+    if (upd.affectedRows === 0) {
+      return res.status(409).json({ error: 'Hasil ini sudah ditautkan (kemungkinan oleh petugas lain) sesaat sebelum panggilan ini.' });
+    }
+    await pool.query("UPDATE lab_request_items SET status = 'done' WHERE id = ?", [itemId]);
+    await audit(req, 'MATCH', 'result', hasil.id, { source: 'bridging', request_id: permintaan.id, simrs_order_id, skor: skorKecocokan(sinyal) });
+
+    res.json({ ok: true, matched_by: req.user.username, request_no: permintaan.request_no });
+  } catch (err) {
+    res.status(500).json({ error: 'Gagal menautkan hasil', details: err.message });
   }
 });
 
