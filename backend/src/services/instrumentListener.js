@@ -5,7 +5,7 @@ import { nilaiHasil } from './flags.js';
 import { konteksPasien } from './konteksPasien.js';
 import { simpanHasilQc } from './qc.js';
 import { hitungDelta } from './deltaCheck.js';
-import { notifikasiKritisKeSimrs } from './simrsPush.js';
+import { notifikasiKritisKeSimrs, notifikasiPerluTinjauKeSimrs } from './simrsPush.js';
 
 /**
  * Apakah pasien boleh didaftarkan otomatis dari nomor sampel yang tidak dikenal.
@@ -148,11 +148,19 @@ async function saveInstrumentResults(instrumentId, protocol, sampleId, results, 
           [JSON.stringify(results), JSON.stringify(patientInfo || null), raw.slice(0, 60000), sudahAda.id]
         ).catch((e) => console.error('Gagal memperbarui hasil belum cocok:', e.message));
       } else {
-        await pool.query(
-          `INSERT INTO unmatched_results (instrument_id, sample_id, patient_info, payload, raw_message)
-           VALUES (?, ?, ?, ?, ?)`,
-          [validInstId, sampleId, JSON.stringify(patientInfo || null), JSON.stringify(results), raw.slice(0, 60000)]
-        ).catch((e) => console.error('Gagal menyimpan hasil belum cocok:', e.message));
+        try {
+          const [ins] = await pool.query(
+            `INSERT INTO unmatched_results (instrument_id, sample_id, patient_info, payload, raw_message)
+             VALUES (?, ?, ?, ?, ?)`,
+            [validInstId, sampleId, JSON.stringify(patientInfo || null), JSON.stringify(results), raw.slice(0, 60000)]
+          );
+          // Hanya sekali per baris baru -- pesan yang sama diperbarui (bukan
+          // ditumpuk) di percabangan "sudahAda" di atas, jadi tidak perlu
+          // notifikasi ulang tiap kali alat retransmit sampel yang sama.
+          notifikasiPerluTinjauKeSimrs('unmatched', ins.insertId).catch(() => {});
+        } catch (e) {
+          console.error('Gagal menyimpan hasil belum cocok:', e.message);
+        }
       }
       console.log(`[Instrument] sampel ${sampleId} tidak cocok dengan order mana pun -> ditahan untuk dicocokkan`);
       // Sengaja BUKAN error: pesannya diterima utuh dan tersimpan, hanya belum
@@ -252,6 +260,20 @@ async function saveInstrumentResults(instrumentId, protocol, sampleId, results, 
       notifikasiKritisKeSimrs(insertResult.insertId).then((r) => {
         if (!r.ok) console.warn(`[Kritis] Gagal notifikasi SIMRS untuk hasil #${insertResult.insertId}:`, r.error || r.reason || r.status);
       });
+    }
+    // Hasil "yatim" (request_id kosong) HANYA dinotifikasi kalau pasiennya
+    // memang punya permintaan terbuka -- kalau tidak punya sama sekali,
+    // ini kemungkinan besar hasil informal (mis. pasien titipan) yang
+    // memang wajar tidak tertaut, dan menotifikasi tiap kejadian itu cuma
+    // jadi kebisingan yang lama-lama diabaikan petugas.
+    if (!link.request_id) {
+      const [[adaPermintaan]] = await pool.query(
+        "SELECT COUNT(*) AS n FROM lab_requests WHERE patient_id = ? AND status NOT IN ('cancelled', 'completed')",
+        [patientId]
+      ).catch(() => [[{ n: 0 }]]);
+      if (adaPermintaan.n > 0) {
+        notifikasiPerluTinjauKeSimrs('yatim', insertResult.insertId).catch(() => {});
+      }
     }
     if (link.request_item_id) {
       await pool.query("UPDATE lab_request_items SET status='done' WHERE id=?", [link.request_item_id]).catch(() => {});

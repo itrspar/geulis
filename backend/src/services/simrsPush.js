@@ -121,3 +121,85 @@ export async function notifikasiKritisKeSimrs(resultId) {
     return { ok: false, error: e.message };
   }
 }
+
+/**
+ * Notifikasi ke SIMRS begitu ada hasil yang PERLU DITINJAU petugas --
+ * pasiennya tidak ketemu sama sekali ("unmatched"), atau pasiennya ketemu
+ * tapi tidak bisa tertaut ke permintaan mana pun karena datanya ambigu
+ * ("yatim" -- lihat findRequestLink di instrumentListener.js/results.js).
+ *
+ * Tujuannya sama seperti notifikasiKritisKeSimrs: petugas tidak perlu ingat
+ * membuka menu Hasil Belum Cocok di LIS sendiri. TIDAK PERNAH menyarankan
+ * pasien/permintaan mana yang cocok lewat jalur ini -- itu tetap keputusan
+ * manusia di LIS (lihat GET /unmatched/:id/saran), supaya SIMRS tidak
+ * menampilkan tebakan sebagai fakta.
+ *
+ * Endpoint tujuan: `${base_url}/notifikasi-tinjau` (lihat docs/BRIDGING_SIMRS.md
+ * §6c) -- perlu diimplementasikan di sisi SIMRS. Best-effort, tidak pernah
+ * melempar: gagal kirim notifikasi TIDAK BOLEH menggagalkan penyimpanan hasil
+ * dari alat.
+ */
+export async function notifikasiPerluTinjauKeSimrs(jenis, id) {
+  try {
+    const [cfgRows] = await pool.query('SELECT * FROM simrs_config WHERE is_active=1 LIMIT 1');
+    const cfg = cfgRows[0];
+    if (!cfg) return { ok: false, skipped: true, reason: 'Konfigurasi SIMRS tidak aktif' };
+
+    let payload;
+    if (jenis === 'unmatched') {
+      const [[u]] = await pool.query(
+        `SELECT u.sample_id, u.payload, u.received_at, i.name AS instrument_name
+           FROM unmatched_results u
+           LEFT JOIN instruments i ON i.id = u.instrument_id
+          WHERE u.id = ?`,
+        [id]
+      );
+      if (!u) return { ok: false, error: 'Hasil tidak ditemukan' };
+      const isi = typeof u.payload === 'string' ? JSON.parse(u.payload) : u.payload || [];
+      payload = {
+        jenis: 'unmatched',
+        sample_id: u.sample_id,
+        no_rm: null,
+        nama_pasien: null,
+        parameter: isi.map((p) => p.test_code).filter(Boolean),
+        instrumen: u.instrument_name,
+        waktu: u.received_at,
+        pesan: `Hasil dari sampel "${u.sample_id}" tidak ditemukan pasiennya. Buka menu Hasil Belum Cocok di LIS untuk mencocokkan.`,
+      };
+    } else if (jenis === 'yatim') {
+      const [[r]] = await pool.query(
+        `SELECT res.result_at, p.medical_record_no, p.name AS patient_name,
+                lt.code AS test_code, i.name AS instrument_name
+           FROM lab_results res
+           JOIN patients p ON p.id = res.patient_id
+           JOIN lab_tests lt ON lt.id = res.test_id
+           LEFT JOIN instruments i ON i.id = res.instrument_id
+          WHERE res.id = ?`,
+        [id]
+      );
+      if (!r) return { ok: false, error: 'Hasil tidak ditemukan' };
+      payload = {
+        jenis: 'yatim',
+        sample_id: null,
+        no_rm: r.medical_record_no,
+        nama_pasien: r.patient_name,
+        parameter: [r.test_code],
+        instrumen: r.instrument_name,
+        waktu: r.result_at,
+        pesan: `Hasil ${r.test_code} pasien ${r.patient_name} (RM ${r.medical_record_no}) sudah masuk tapi belum tertaut ke permintaan mana pun. Buka menu Hasil Belum Cocok -> Hasil Tanpa Permintaan di LIS untuk menautkan.`,
+      };
+    } else {
+      return { ok: false, error: `jenis tidak dikenal: ${jenis}` };
+    }
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (cfg.auth_type === 'bearer' && cfg.api_key) headers.Authorization = `Bearer ${cfg.api_key}`;
+    if (cfg.auth_type === 'api_key' && cfg.api_key) headers['x-api-key'] = cfg.api_key;
+    const url = `${cfg.base_url.replace(/\/$/, '')}/notifikasi-tinjau`;
+    const resp = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload) });
+    const text = await resp.text().catch(() => '');
+    return { ok: resp.ok, status: resp.status, response: text.slice(0, 500) };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}

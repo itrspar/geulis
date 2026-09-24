@@ -354,6 +354,73 @@ kasus notifikasi ini gagal terkirim (jaringan putus, dsb).
 `kode_pemeriksaan` sudah diterjemahkan lewat mapping tes aktif (§4) bila
 ada; kalau belum dipetakan, dikirim apa adanya sebagai kode LIS.
 
+### §6c. Webhook `POST {simrs_base_url}/notifikasi-tinjau` — **SIMRS yang mengimplementasikan, GeuLIS yang memanggil**
+
+Sama arahnya seperti §6b, tujuan berbeda: dipanggil begitu ada hasil dari
+alat yang **perlu ditinjau petugas**, bukan nilai kritis. Dua kondisi
+memicunya:
+
+- **`jenis: "unmatched"`** — nomor sampel yang dikirim alat tidak cocok
+  dengan pasien mana pun sama sekali.
+- **`jenis: "yatim"`** — pasiennya ketemu (hasil sudah tersimpan atas nama
+  yang benar), tapi tidak bisa dipastikan tertaut ke permintaan mana pun --
+  baik karena permintaannya tidak minta tes ini (mis. kode tes dipetakan
+  ulang setelah order dibuat), maupun karena pasien itu kebetulan punya
+  lebih dari satu permintaan terbuka yang sama-sama minta tes ini (LIS
+  sengaja TIDAK menebak yang mana).
+
+Tanpa ini, petugas baru tahu ada yang menggantung kalau kebetulan membuka
+menu Hasil Belum Cocok di LIS sendiri.
+
+**Prasyarat**: sama seperti §6b (`simrs_config` aktif di GeuLIS).
+URL yang dipanggil `{base_url}/notifikasi-tinjau`.
+
+Body yang dikirim GeuLIS:
+
+```json
+{
+  "jenis": "unmatched",
+  "sample_id": "778899",
+  "no_rm": null,
+  "nama_pasien": null,
+  "parameter": ["T3", "TSH"],
+  "instrumen": "iChroma II",
+  "waktu": "2026-09-24 13:16:48",
+  "pesan": "Hasil dari sampel \"778899\" tidak ditemukan pasiennya. Buka menu Hasil Belum Cocok di LIS untuk mencocokkan."
+}
+```
+
+```json
+{
+  "jenis": "yatim",
+  "sample_id": null,
+  "no_rm": "000123",
+  "nama_pasien": "BUDI SANTOSO",
+  "parameter": ["HbA1c"],
+  "instrumen": "iChroma II",
+  "waktu": "2026-09-24 11:56:39",
+  "pesan": "Hasil HbA1c pasien BUDI SANTOSO (RM 000123) sudah masuk tapi belum tertaut ke permintaan mana pun. Buka menu Hasil Belum Cocok -> Hasil Tanpa Permintaan di LIS untuk menautkan."
+}
+```
+
+**PENTING — `pesan` cukup untuk ditampilkan apa adanya, tapi JANGAN
+menyimpulkan pasien/permintaan mana yang benar dari payload ini dan
+menawarkannya sebagai pilihan siap-klik di SIMRS.** LIS sengaja tidak
+mengirim kandidat/tebakan lewat webhook ini (beda dari `GET
+/unmatched/:id/saran` yang memang untuk itu, dan hanya bisa diakses lewat
+LIS langsung oleh petugas berwenang) -- notifikasi ini cuma pemberitahuan
+"ada yang perlu dilihat", keputusannya tetap di menu Hasil Belum Cocok LIS.
+
+`unmatched` dikirim sekali per sampel baru (retransmit alat memperbarui
+baris yang sama, tidak mengirim notifikasi ulang). `yatim` dikirim per
+hasil, dan HANYA kalau pasiennya memang punya permintaan terbuka lain --
+hasil informal yang memang tidak berasal dari order (mis. pasien titipan)
+sengaja tidak dinotifikasi, supaya tidak jadi kebisingan yang diabaikan.
+
+SIMRS wajib membalas `200` (isi body bebas); kegagalan hanya dicatat
+sebagai peringatan di log GeuLIS, tidak pernah menggagalkan penyimpanan
+hasil dari alat.
+
 ### GET `/api/bridging/test-catalog`
 
 SIMRS menariknya untuk rekonsiliasi — tahu tes apa yang sudah ada di LIS, mana
