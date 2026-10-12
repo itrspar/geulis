@@ -343,11 +343,13 @@ router.get('/result/:simrs_order_id', async (req, res) => {
     const formattedResults = await Promise.all(resultRows.map(async (r) => {
       const hasValue = r.result_value != null && r.result_value !== '';
       const verified = r.status === 'final' || r.status === 'corrected';
-      // Kritis/abnormal/delta mencurigakan yang belum dilaporkan (critical_ack)
-      // wajib disertai "siapa yang dihubungi" sebelum bisa diverifikasi lewat
-      // POST /result/:id/verify -- SIMRS bisa pakai flag ini untuk menampilkan
-      // input pelaporan itu di muka, bukan menunggu 400 dari server dulu.
+      // Kritis/abnormal/delta mencurigakan tidak lagi menahan verifikasi
+      // (lihat catatan di POST /result/:id/verify) -- perluLaporan di sini
+      // cuma menandai "perlu dilaporkan", dipakai sebelum maupun sesudah
+      // verifikasi, dibersihkan lewat POST /result/:id/report begitu
+      // critical_ack terisi.
       const perluLaporan = ['critical', 'abnormal'].includes(r.flag) || r.delta_flag === 'check';
+      const reportPending = hasValue && perluLaporan && !r.critical_ack;
 
       let reference = null;
       const rj = await rujukanBerlaku({ id: r.test_id }, konteksPasien, { sumber: SUMBER_SIMRS });
@@ -378,7 +380,12 @@ router.get('/result/:simrs_order_id', async (req, res) => {
         result_time: r.result_at,
         // completed hanya bila sudah diverifikasi; jika ada nilai tapi belum verifikasi => preliminary
         status: hasValue ? (verified ? 'completed' : 'preliminary') : 'pending',
-        needs_report_before_verify: !verified && hasValue && perluLaporan && !r.critical_ack,
+        // Dipertahankan untuk klien lama -- maknanya kini HANYA "perlu
+        // dilaporkan", BUKAN lagi "wajib sebelum verifikasi" (gerbang itu
+        // sudah dilepas, lihat POST /result/:id/verify). Sama persis dengan
+        // report_pending di bawah; pakai report_pending untuk klien baru.
+        needs_report_before_verify: reportPending,
+        report_pending: reportPending,
       };
     }));
 
@@ -390,6 +397,7 @@ router.get('/result/:simrs_order_id', async (req, res) => {
     // endpoint verifikasi baru, ini murni angkutan ringkasan.
     const unverifiedCount = formattedResults.filter((r) => r.status === 'preliminary').length;
     const needsReportCount = formattedResults.filter((r) => r.needs_report_before_verify).length;
+    const reportPendingCount = formattedResults.filter((r) => r.report_pending).length;
 
     // Hasil "yatim" (lihat commit 8d4af43/efcc394) milik PASIEN INI SAJA --
     // JANGAN pernah cari lintas pasien di sini, satu API key dipakai untuk
@@ -439,12 +447,14 @@ router.get('/result/:simrs_order_id', async (req, res) => {
       },
       results: formattedResults,
       // > 0 berarti ada hasil bernilai tapi belum final -- pemicu notif di
-      // SIMRS. needs_report_count adalah subset yang WAJIB mengisi
-      // reported_to dulu di POST /result/:id/verify (kritis/abnormal/delta
-      // yang belum pernah dilaporkan), supaya SIMRS bisa minta input itu di
-      // muka pada dialog verifikasi, bukan menunggu 400 dari server dulu.
+      // SIMRS. needs_report_count/report_pending_count sama persis (dua nama
+      // untuk kompatibilitas klien lama & baru, lihat needs_report_before_verify
+      // di atas) -- jumlah hasil kritis/abnormal/delta yang belum punya catatan
+      // pelaporan, SUDAH ATAU BELUM diverifikasi, dipakai sebagai badge
+      // pengingat "lapor menyusul" di SIMRS, bukan lagi gerbang verifikasi.
       unverified_count: unverifiedCount,
       needs_report_count: needsReportCount,
+      report_pending_count: reportPendingCount,
       // Selalu array, kosong kalau tidak ada -- sama seperti unmapped_tests.
       // Tautkan lewat POST /result/{result_id}/match, BUKAN dengan menulis
       // request_id secara langsung dari SIMRS manapun -- server memverifikasi
@@ -465,14 +475,22 @@ router.get('/result/:simrs_order_id', async (req, res) => {
  * maupun kritis. `:id` adalah result_id yang dikembalikan GET /result di atas.
  *
  * Body: { simrs_user_id (wajib, lihat resolveSimrsUser),
- *         reported_to, reported_via, readback, note (wajib HANYA bila hasil
- *         berpenanda kritis/abnormal/delta dan belum pernah dilaporkan) }
+ *         reported_to, reported_via, readback, note (opsional) }
  *
- * Hasil kritis/abnormal TIDAK ditolak paksa ke LIS (sesuai keputusan: SIMRS
- * jadi antarmuka utama) -- tapi catatan pelaporan (siapa yang dihubungi, lewat
- * apa, dibacakan ulang atau tidak) tetap wajib diisi dalam panggilan yang
- * sama, supaya syarat akreditasi (PMK 43/2013) tidak ikut terlewati hanya
- * karena jalurnya lebih cepat.
+ * `reported_to` dkk TIDAK LAGI wajib untuk hasil kritis/abnormal -- dulu
+ * panggilan ini ditolak (400 requires_report) sampai dilaporkan, tapi itu
+ * menahan hasil sampai ke ruangan hanya karena laporan ke dokter PJ belum
+ * selesai (yang kadang makan waktu lama), padahal notifikasi kritis sendiri
+ * sudah terkirim seketika lewat webhook (lihat instrumentListener.js) --
+ * independen dari status verifikasi ini. Sama seperti verifikasi analis di
+ * jalur LIS langsung (results.js PATCH /:id/verify): verifikasi tidak pernah
+ * ditahan oleh pelaporan kritis, yang ditahan cuma pengesahan dokter PJ untuk
+ * lembar cetak resmi -- dan pengesahan itu di luar jalur SIMRS sama sekali.
+ *
+ * Kalau reported_to DIKIRIM di sini (klien lama, atau petugas kebetulan
+ * sudah tahu siapa yang dihubungi saat verifikasi), tetap dicatat seperti
+ * biasa -- supaya klien lama tidak rusak. Yang tertunda cukup lapor lewat
+ * POST /result/:id/report begitu laporannya selesai.
  */
 router.post('/result/:id/verify', resolveSimrsUser, requirePermission('results.manage'), async (req, res) => {
   const { reported_to, reported_via, readback, note } = req.body || {};
@@ -487,16 +505,7 @@ router.post('/result/:id/verify', resolveSimrsUser, requirePermission('results.m
       return res.status(409).json({ error: `Hasil berstatus '${hasil.status}', tidak bisa diverifikasi lewat jalur ini.` });
     }
 
-    const perluLaporan = ['critical', 'abnormal'].includes(hasil.flag) || hasil.delta_flag === 'check';
-    if (perluLaporan && !hasil.critical_ack) {
-      if (!reported_to || !String(reported_to).trim()) {
-        return res.status(400).json({
-          error: 'Hasil ini bertanda kritis/abnormal/delta mencurigakan. Sertakan reported_to (nama yang dihubungi) untuk melanjutkan.',
-          requires_report: true,
-          flag: hasil.flag,
-          delta_flag: hasil.delta_flag,
-        });
-      }
+    if (reported_to && String(reported_to).trim() && !hasil.critical_ack) {
       await pool.query(
         `UPDATE lab_results
             SET critical_ack = 1, critical_ack_by = ?, critical_ack_at = NOW(),
@@ -536,6 +545,51 @@ router.post('/result/:id/verify', resolveSimrsUser, requirePermission('results.m
     res.json({ ok: true, verified_by: req.user.username, push });
   } catch (err) {
     res.status(500).json({ error: 'Gagal memverifikasi hasil', details: err.message });
+  }
+});
+
+/**
+ * POST /bridging/result/:id/report
+ *
+ * Lengkapi pelaporan nilai kritis SESUDAH (atau tanpa) verifikasi -- jalur
+ * ini yang dipakai begitu petugas selesai menghubungi dokter PJ, terpisah
+ * dari POST /result/:id/verify supaya hasil tidak perlu menunggu laporan
+ * ini kelar dulu baru terkirim ke ruangan (lihat catatan di /verify).
+ *
+ * Body: { simrs_user_id (wajib, lihat resolveSimrsUser),
+ *         reported_to (wajib), reported_via, readback, note }
+ *
+ * Waktu lapor dicatat NOW() saat endpoint ini dipanggil -- TERPISAH dari
+ * verified_at -- supaya jeda "hasil tersedia -> dilaporkan" tetap bisa
+ * diukur walau dua langkahnya kini terpisah waktu.
+ */
+router.post('/result/:id/report', resolveSimrsUser, requirePermission('results.manage'), async (req, res) => {
+  const { reported_to, reported_via, readback, note } = req.body || {};
+  if (!reported_to || !String(reported_to).trim()) {
+    return res.status(400).json({ error: 'reported_to wajib diisi (nama yang dihubungi).' });
+  }
+  try {
+    const [[hasil]] = await pool.query(
+      'SELECT id, critical_ack FROM lab_results WHERE id = ?',
+      [req.params.id]
+    );
+    if (!hasil) return res.status(404).json({ error: 'Hasil tidak ditemukan.' });
+    if (hasil.critical_ack) {
+      return res.status(409).json({ error: 'Hasil ini sudah dilaporkan sebelumnya -- koreksi catatan pelaporan lewat LIS, bukan menimpa lewat jalur ini.' });
+    }
+
+    await pool.query(
+      `UPDATE lab_results
+          SET critical_ack = 1, critical_ack_by = ?, critical_ack_at = NOW(),
+              critical_reported_to = ?, critical_reported_via = ?, critical_readback = ?, critical_note = ?
+        WHERE id = ?`,
+      [req.user.id, String(reported_to).trim(), reported_via || null, readback ? 1 : 0, note || null, req.params.id]
+    );
+    await audit(req, 'ACK', 'result', req.params.id, { reported_to, reported_via, readback: !!readback, source: 'bridging_report' });
+
+    res.json({ ok: true, reported_by: req.user.username });
+  } catch (err) {
+    res.status(500).json({ error: 'Gagal mencatat pelaporan', details: err.message });
   }
 });
 

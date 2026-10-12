@@ -228,6 +228,7 @@ sebelumnya.
   ],
   "unverified_count": 0,
   "needs_report_count": 0,
+  "report_pending_count": 0,
   "orphan_candidates": [
     {
       "result_id": 1234,
@@ -254,24 +255,46 @@ pernah menyisipkan rentang lain (mis. rentang per umur ala LIS di menu Nilai
 Rujukan) ke jalur ini, supaya rentang yang tampil di SIMRS selalu sinkron
 dengan yang SIMRS atur sendiri.
 
-Field tambahan per hasil, dipakai untuk verifikasi (§6a): `result_id` (dipakai
-sebagai `:id` pada `POST /result/{id}/verify`), `needs_report_before_verify`
-(`true` bila hasil berpenanda kritis/abnormal/delta mencurigakan dan belum ada
-catatan pelaporan — SIMRS sebaiknya menampilkan input "dilaporkan ke siapa"
-sebelum memanggil endpoint verifikasi, bukan menunggu error 400).
+Field tambahan per hasil, dipakai untuk verifikasi & pelaporan kritis (§6a):
+`result_id` (dipakai sebagai `:id` pada `POST /result/{id}/verify` dan
+`POST /result/{id}/report`), `report_pending` (`true` bila hasil berpenanda
+kritis/abnormal/delta mencurigakan dan belum ada catatan pelaporan — berlaku
+SUDAH ATAU BELUM diverifikasi, dipakai sebagai pengingat "lapor menyusul" di
+SIMRS, **bukan** gerbang verifikasi — lihat perubahan kontrak di §6a).
+`needs_report_before_verify` tetap dikirim dengan nilai yang sama persis
+seperti `report_pending`, dipertahankan hanya untuk klien lama; klien baru
+pakai `report_pending`.
 
-**`unverified_count` / `needs_report_count`** (di level teratas, bukan per
-hasil) — ringkasan dari `results[]` di atas: jumlah hasil berstatus
-`preliminary` (ada nilai, belum diverifikasi), dan berapa di antaranya yang
-`needs_report_before_verify: true`. Dipikirkan sebagai **pemicu notifikasi**:
+> **Perubahan kontrak (berlaku sejak rilis ini)**: `POST /result/{id}/verify`
+> TIDAK LAGI menolak (400 `requires_report`) hasil kritis/abnormal yang belum
+> dilaporkan — verifikasi langsung berhasil dan hasil langsung terkirim ke
+> ruangan begitu seluruh item order final, terlepas dari status pelaporan.
+> Pelaporan nilai kritis kini endpoint terpisah, `POST /result/{id}/report`
+> (lihat §6a), dipanggil kapan saja setelah petugas selesai menghubungi
+> dokter PJ — tidak lagi harus dalam panggilan verifikasi yang sama. Dialog
+> "Pelaporan Nilai Kritis" di SIMRS yang sebelumnya bergantung pada 400 ini
+> perlu disesuaikan: tombol "Lapor Nanti" pada verifikasi cukup memanggil
+> `/verify` tanpa `reported_to` sama sekali (bukan lagi mengirim penanda
+> "(menyusul)"), dan pelaporan yang menyusul itu memanggil `/report`.
+
+**`unverified_count` / `needs_report_count` / `report_pending_count`** (di
+level teratas, bukan per hasil) — ringkasan dari `results[]` di atas:
+`unverified_count` = jumlah hasil berstatus `preliminary` (ada nilai, belum
+diverifikasi); `needs_report_count` dan `report_pending_count` sama persis
+(dua nama untuk kompatibilitas) = jumlah hasil yang `report_pending: true`,
+SUDAH ATAU BELUM diverifikasi. Dipikirkan sebagai **pemicu notifikasi**:
 setiap kali SIMRS memanggil endpoint ini (mis. petugas membuka layar hasil
-lab pasien) dan `unverified_count > 0`, tampilkan notif/badge "N hasil siap
-diverifikasi" dengan tombol per hasil yang langsung memanggil
-`POST /result/{result_id}/verify` (§6) — SIMRS tidak perlu polling terus-
-menerus di latar belakang, notifnya cukup muncul reaktif pada saat SIMRS
-sendiri sedang meminta data itu. Tidak berlaku sebagai pengganti webhook
-`/notifikasi-kritis` (§6b): itu untuk kasus kritis yang harus diketahui
-SEGERA meski tidak ada yang sedang membuka layar hasil sama sekali.
+lab pasien), tampilkan badge "N hasil siap diverifikasi" (dari
+`unverified_count`) dan badge terpisah "N pelaporan kritis menyusul" (dari
+`report_pending_count`) — keduanya independen sejak gerbang verifikasi
+dilepas, satu hasil bisa sudah terverifikasi tapi laporannya masih
+tertunda. Tombol pada badge pertama memanggil `POST /result/{result_id}/verify`,
+badge kedua memanggil `POST /result/{result_id}/report` (§6a). SIMRS tidak
+perlu polling terus-menerus di latar belakang, notifnya cukup muncul reaktif
+pada saat SIMRS sendiri sedang meminta data itu. Tidak berlaku sebagai
+pengganti webhook `/notifikasi-kritis` (§6b): itu untuk kasus kritis yang
+harus diketahui SEGERA meski tidak ada yang sedang membuka layar hasil sama
+sekali.
 
 **`orphan_candidates`** — hasil "yatim" (dari instrumen, pasiennya ketemu
 tapi belum tertaut ke permintaan mana pun — lihat §6c) milik **pasien order
@@ -311,7 +334,7 @@ Body:
 ```json
 {
   "simrs_user_id": "198501012010011001",
-  "reported_to": "dr. Andi (opsional, WAJIB untuk hasil kritis/abnormal)",
+  "reported_to": "dr. Andi (opsional)",
   "reported_via": "Telepon",
   "readback": true,
   "note": "Pasien sudah rawat inap ruang ICU"
@@ -322,11 +345,13 @@ Body:
   lewat menu di atas. Wajib di setiap panggilan.
 - `reported_to`, `reported_via`, `readback`, `note` — catatan pelaporan nilai
   kritis (PMK 43/2013): siapa yang dihubungi, lewat apa, apakah dibacakan
-  ulang. **Wajib diisi** (minimal `reported_to`) hanya jika hasil berpenanda
-  `critical`/`abnormal` atau `delta_flag='check'` DAN belum pernah dilaporkan
-  sebelumnya (`needs_report_before_verify: true` pada respons GET /result).
-  Untuk hasil normal, field ini boleh dikosongkan — verifikasi langsung
-  diproses.
+  ulang. **Sepenuhnya opsional di sini**, termasuk untuk hasil
+  `critical`/`abnormal`/delta mencurigakan — lihat kotak perubahan kontrak di
+  §6a di atas. Kalau dikirim dan hasilnya belum pernah dilaporkan, tetap
+  dicatat seperti biasa (klien lama yang masih mengirim `reported_to` di sini
+  tidak rusak). Kalau belum ada/belum siap, lewati saja — lapor menyusul
+  lewat `POST /result/{result_id}/report` di bawah begitu petugas selesai
+  menghubungi dokter PJ.
 
 Sukses (`200`):
 
@@ -336,16 +361,65 @@ Sukses (`200`):
 
 Order otomatis ditutup (`status='completed'`) dan hasilnya didorong balik ke
 SIMRS (lihat §5) begitu SELURUH item order tersebut sudah final — bukan per
-hasil, supaya SIMRS tidak menerima laporan sebagian.
+hasil, supaya SIMRS tidak menerima laporan sebagian. Ini berlaku SAMA untuk
+hasil kritis yang pelaporannya belum selesai — verifikasi tidak lagi
+menunggu itu.
 
 Error yang mungkin muncul:
 
 | Status | Kapan | Tindakan SIMRS |
 |---|---|---|
-| `400` `requires_report: true` | Hasil kritis/abnormal, `reported_to` belum diisi | Tampilkan form pelaporan, kirim ulang dengan `reported_to` terisi |
 | `403` | `simrs_user_id` belum dipetakan / akun GeuLIS nonaktif | Minta admin LIS memetakan akun via menu Mapping SIMRS |
 | `404` | `result_id` tidak ditemukan | — |
 | `409` | Hasil sudah `final`/`corrected`, tidak bisa diverifikasi ulang lewat jalur ini | Sembunyikan tombol verifikasi untuk hasil yang statusnya sudah `completed` |
+
+### POST `/api/bridging/result/{result_id}/report`
+
+Lengkapi catatan pelaporan nilai kritis (PMK 43/2013) — dipanggil kapan saja
+setelah `GET /result` menunjukkan `report_pending: true` pada suatu hasil,
+baik sebelum maupun sesudah hasil itu diverifikasi lewat `/verify`. Ini jalur
+"lapor menyusul": petugas boleh merilis/mencetak hasil ke dokter lebih dulu,
+lalu melengkapi siapa yang dihubungi begitu panggilan ke dokter PJ selesai.
+
+**Prasyarat**: sama seperti `/verify` — `simrs_user_id` sudah dipetakan
+(`403` kalau belum).
+
+Body:
+
+```json
+{
+  "simrs_user_id": "198501012010011001",
+  "reported_to": "dr. Andi (wajib)",
+  "reported_via": "Telepon",
+  "readback": true,
+  "note": "Jabatan penerima: DPJP. Upaya gagal/eskalasi: ..."
+}
+```
+
+- `simrs_user_id` — wajib, sama seperti `/verify`.
+- `reported_to` — **wajib** (`400` kalau kosong); tanpa ini catatannya tidak
+  membuktikan apa pun.
+- `reported_via`, `readback`, `note` — opsional, sama arti seperti di
+  `/verify`.
+
+Waktu lapor dicatat **saat endpoint ini dipanggil**, terpisah dari waktu
+verifikasi — jeda "hasil tersedia → dilaporkan" tetap terukur walau kedua
+langkahnya kini terpisah waktu.
+
+Sukses (`200`):
+
+```json
+{ "ok": true, "reported_by": "andi.analis" }
+```
+
+Error yang mungkin muncul:
+
+| Status | Kapan | Tindakan SIMRS |
+|---|---|---|
+| `400` | `reported_to` kosong | Tampilkan form pelaporan, kirim ulang dengan `reported_to` terisi |
+| `403` | `simrs_user_id` belum dipetakan / akun GeuLIS nonaktif | Minta admin LIS memetakan akun via menu Mapping SIMRS |
+| `404` | `result_id` tidak ditemukan | — |
+| `409` | Hasil ini sudah pernah dilaporkan sebelumnya | Jangan tampilkan lagi tombol "lapor" untuk hasil ini — muat ulang `GET /result`, koreksi catatan (kalau memang salah) dilakukan lewat LIS langsung, bukan menimpa lewat endpoint ini |
 
 ### POST `/api/bridging/result/{result_id}/match`
 
