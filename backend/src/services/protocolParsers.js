@@ -192,7 +192,14 @@ export function parseHl7(raw) {
       // "Whole Blood" atau "sampel lipemik" pada BC-3600.
       const valueType = (parts[2] || '').trim().toUpperCase();
       if (valueType === 'ED') continue;
-      const nilaiAngka = parts[5] !== undefined && parts[5] !== '' && Number.isFinite(Number(parts[5]));
+      // Hasil di luar jangkauan ukur alat (mis. iChroma T4 "> 300.00" saat
+      // kadarnya melebihi batas assay) ditandai dengan "<"/">" di depan --
+      // konvensi lab yang lazim, BUKAN teks non-hasil. Number("> 300.00")
+      // selalu NaN, jadi dicek dulu tanpa tanda pembandingnya; nilai ASLI
+      // (dengan "<"/">"-nya) tetap yang disimpan di bawah (value = parts[5]),
+      // supaya makna "melebihi batas ukur" tidak hilang jadi angka pasti palsu.
+      const angkaBersih = (parts[5] || '').trim().replace(/^[<>]=?\s*/, '');
+      const nilaiAngka = parts[5] !== undefined && parts[5] !== '' && Number.isFinite(Number(angkaBersih));
       if (['IS', 'TX', 'FT'].includes(valueType) && !nilaiAngka) continue;
 
       // EDAN i15: OBX-3 BUKAN kode tes, melainkan satu angka tipe —
