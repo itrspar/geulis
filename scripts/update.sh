@@ -36,8 +36,25 @@ sudo_pengguna() {
   fi
 }
 
+# Semua perintah git WAJIB lewat sini, tidak terkecuali -- skrip ini sendiri
+# berjalan sebagai root (baris pengecekan id -u di atas), tapi repo ini
+# dimiliki $PENGGUNA. git menolak ("detected dubious ownership") begitu
+# dijalankan sebagai pemilik yang berbeda dari direktorinya -- ketahuan
+# sendiri di produksi saat baris "git status --porcelain" polos (tanpa
+# dibungkus) gagal begini, dan kegagalannya nyaris tidak kelihatan karena
+# $(...) tetap mengembalikan string kosong (dianggap "tidak ada perubahan")
+# walau git-nya sendiri gagal total.
+git_sebagai() {
+  if id "$PENGGUNA" >/dev/null 2>&1; then
+    sudo -u "$PENGGUNA" git -C "$AKAR" "$@"
+  else
+    git -C "$AKAR" "$@"
+  fi
+}
+
 judul "0. Periksa perubahan lokal"
-if [ -n "$(git status --porcelain)" ]; then
+PERUBAHAN=$(git_sebagai status --porcelain)
+if [ -n "$PERUBAHAN" ]; then
   merah "Ada perubahan yang belum dikomit di $AKAR -- update dibatalkan."
   echo "  Server produksi tidak semestinya punya perubahan lokal. Periksa dengan:"
   echo "    git status"
@@ -45,12 +62,12 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 hijau "✓ tidak ada perubahan lokal"
 
-CABANG=$(git rev-parse --abbrev-ref HEAD)
-SEBELUM=$(git rev-parse --short HEAD)
+CABANG=$(git_sebagai rev-parse --abbrev-ref HEAD)
+SEBELUM=$(git_sebagai rev-parse --short HEAD)
 
 judul "1. Tarik update (cabang $CABANG)"
-sudo_pengguna "cd '$AKAR' && git fetch origin '$CABANG'"
-if ! git merge-base --is-ancestor HEAD "origin/$CABANG"; then
+git_sebagai fetch origin "$CABANG"
+if ! git_sebagai merge-base --is-ancestor HEAD "origin/$CABANG"; then
   merah "Riwayat lokal menyimpang dari origin/$CABANG -- tidak bisa fast-forward."
   echo "  Ini TIDAK NORMAL di server produksi (semestinya cuma pernah ditarik,"
   echo "  tidak pernah dikomit langsung di sini). Periksa manual sebelum lanjut:"
@@ -58,15 +75,15 @@ if ! git merge-base --is-ancestor HEAD "origin/$CABANG"; then
   echo "    git log --oneline origin/$CABANG..HEAD     # yang cuma ada di sini"
   exit 1
 fi
-sudo_pengguna "cd '$AKAR' && git merge --ff-only 'origin/$CABANG'"
-SESUDAH=$(git rev-parse --short HEAD)
+git_sebagai merge --ff-only "origin/$CABANG"
+SESUDAH=$(git_sebagai rev-parse --short HEAD)
 
 if [ "$SEBELUM" = "$SESUDAH" ]; then
   hijau "✓ Sudah versi terbaru ($SEBELUM) -- tidak ada yang berubah, berhenti di sini."
   exit 0
 fi
 echo "  $SEBELUM -> $SESUDAH"
-git log --oneline "$SEBELUM..$SESUDAH"
+git_sebagai log --oneline "$SEBELUM..$SESUDAH"
 
 judul "2. Pasang ulang dependensi (kalau package.json berubah)"
 sudo_pengguna "cd '$AKAR' && npm run install:all"
