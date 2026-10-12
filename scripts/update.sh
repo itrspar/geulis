@@ -53,7 +53,13 @@ git_sebagai() {
 }
 
 judul "0. Periksa perubahan lokal"
-PERUBAHAN=$(git_sebagai status --porcelain)
+# --untracked-files=no SENGAJA -- ketemu di produksi: folder cache semacam
+# .npm/ yang kebetulan nyasar ke akar repo dihitung sebagai "perubahan" dan
+# menghentikan update padahal bukan source code yang dimodifikasi. Yang
+# sebenarnya mau dicegah di sini adalah file yang SUDAH ditrack lalu diubah
+# manual di produksi (fast-forward tidak aman kalau begitu) -- berkas baru
+# yang belum ditrack bukan ancaman buat fast-forward merge.
+PERUBAHAN=$(git_sebagai status --porcelain --untracked-files=no)
 if [ -n "$PERUBAHAN" ]; then
   merah "Ada perubahan yang belum dikomit di $AKAR -- update dibatalkan."
   echo "  Server produksi tidak semestinya punya perubahan lokal. Periksa dengan:"
