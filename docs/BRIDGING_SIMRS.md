@@ -276,6 +276,11 @@ pakai `report_pending`.
 > perlu disesuaikan: tombol "Lapor Nanti" pada verifikasi cukup memanggil
 > `/verify` tanpa `reported_to` sama sekali (bukan lagi mengirim penanda
 > "(menyusul)"), dan pelaporan yang menyusul itu memanggil `/report`.
+>
+> **Tambahan**: kalau catatan pelaporan itu sendiri salah ketik (nama
+> penerima, dsb.) dan perlu dibetulkan SESUDAH tercatat, `/report` akan
+> menolak (`409`) — gunakan `POST /result/{id}/report/correct` (lihat §6a),
+> baru ditambahkan di rilis ini.
 
 **`unverified_count` / `needs_report_count` / `report_pending_count`** (di
 level teratas, bukan per hasil) — ringkasan dari `results[]` di atas:
@@ -419,7 +424,61 @@ Error yang mungkin muncul:
 | `400` | `reported_to` kosong | Tampilkan form pelaporan, kirim ulang dengan `reported_to` terisi |
 | `403` | `simrs_user_id` belum dipetakan / akun GeuLIS nonaktif | Minta admin LIS memetakan akun via menu Mapping SIMRS |
 | `404` | `result_id` tidak ditemukan | — |
-| `409` | Hasil ini sudah pernah dilaporkan sebelumnya | Jangan tampilkan lagi tombol "lapor" untuk hasil ini — muat ulang `GET /result`, koreksi catatan (kalau memang salah) dilakukan lewat LIS langsung, bukan menimpa lewat endpoint ini |
+| `409` | Hasil ini sudah pernah dilaporkan sebelumnya | Jangan tampilkan lagi tombol "lapor" untuk hasil ini — muat ulang `GET /result`. Kalau memang salah ketik, panggil `POST /report/correct` di bawah (atau koreksi lewat LIS) — bukan menimpa lewat endpoint ini |
+
+### POST `/api/bridging/result/{result_id}/report/correct`
+
+Koreksi catatan pelaporan nilai kritis yang **sudah** tercatat — mis. salah
+ketik nama penerima saat memanggil `/report`. Ini jalur resmi untuk kasus itu:
+`/report` di atas sengaja menolak (`409`) menimpa laporan yang sudah ada dan
+mengarahkan ke sini.
+
+**Prasyarat**: `simrs_user_id` sudah dipetakan (`403` kalau belum), **dan**
+akun GeuLIS yang terpetakan punya hak "Perbaiki/Hapus Hasil"
+(`results.correct`) — bukan cuma hak kelola hasil biasa, karena endpoint ini
+selalu berarti koreksi, tidak pernah pelaporan pertama kali. Kalau akun
+terpetakan belum punya hak ini, minta admin LIS menambahkannya di menu User
+& Hak Akses.
+
+Body:
+
+```json
+{
+  "simrs_user_id": "198501012010011001",
+  "reported_to": "dr. Citra (wajib, nilai yang BENAR)",
+  "reported_via": "Telepon",
+  "readback": true,
+  "note": "...",
+  "reason": "Salah ketik nama penerima saat lapor sebelumnya (wajib)"
+}
+```
+
+- `simrs_user_id`, `reported_to` — wajib, sama seperti `/report`.
+- `reason` — **wajib** (`400` kalau kosong); alasan koreksi ini tercatat
+  permanen di riwayat, terpisah dari catatan asli.
+- `reported_via`, `readback`, `note` — opsional, sama arti seperti di
+  `/report`; nilai yang dikirim MENIMPA catatan lama (ini bukan penggabungan
+  field per field — kirim field yang tetap sama persis seperti nilainya
+  semula).
+
+Catatan lama (siapa dihubungi/lewat apa/dibacakan ulang atau tidak/waktu
+lapor lama) **tidak hilang** — tersimpan di riwayat internal GeuLIS, bisa
+ditelusuri lewat LIS untuk kebutuhan akreditasi.
+
+Sukses (`200`):
+
+```json
+{ "ok": true, "reported_by": "andi.analis" }
+```
+
+Error yang mungkin muncul:
+
+| Status | Kapan | Tindakan SIMRS |
+|---|---|---|
+| `400` | `reported_to` atau `reason` kosong | Tampilkan form koreksi, kedua field itu wajib diisi |
+| `403` | `simrs_user_id` belum dipetakan / akun nonaktif / akun terpetakan tidak punya hak `results.correct` | Minta admin LIS memetakan/memberi hak akun ini |
+| `404` | `result_id` tidak ditemukan | — |
+| `409` | Hasil ini **belum pernah** dilaporkan | Gunakan `POST /report`, bukan endpoint ini |
 
 ### POST `/api/bridging/result/{result_id}/match`
 

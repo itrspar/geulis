@@ -6,6 +6,7 @@ import { genRequestNo } from '../services/requestNo.js';
 import { pushRequestResultsToSimrs } from '../services/simrsPush.js';
 import { rujukanBerlaku, labelRujukan, umurHari, kosongkanCacheRujukan, SUMBER_SIMRS } from '../services/rujukanUmur.js';
 import { kecocokanRequest, skorKecocokan } from '../services/kecocokanHasil.js';
+import { simpanRevisiKritis } from '../services/revisiHasil.js';
 
 /** Umur dalam hari dari {nilai, satuan}. Satuan mengikuti konvensi menu
  *  Nilai Rujukan GeuLIS sendiri (hari/bulan/tahun) -- supaya SIMRS tidak
@@ -575,7 +576,7 @@ router.post('/result/:id/report', resolveSimrsUser, requirePermission('results.m
     );
     if (!hasil) return res.status(404).json({ error: 'Hasil tidak ditemukan.' });
     if (hasil.critical_ack) {
-      return res.status(409).json({ error: 'Hasil ini sudah dilaporkan sebelumnya -- koreksi catatan pelaporan lewat LIS, bukan menimpa lewat jalur ini.' });
+      return res.status(409).json({ error: 'Hasil ini sudah dilaporkan sebelumnya -- gunakan POST /report/correct (atau koreksi lewat LIS), bukan menimpa lewat jalur ini.' });
     }
 
     await pool.query(
@@ -590,6 +591,60 @@ router.post('/result/:id/report', resolveSimrsUser, requirePermission('results.m
     res.json({ ok: true, reported_by: req.user.username });
   } catch (err) {
     res.status(500).json({ error: 'Gagal mencatat pelaporan', details: err.message });
+  }
+});
+
+/**
+ * POST /bridging/result/:id/report/correct
+ *
+ * Koreksi catatan pelaporan nilai kritis yang SUDAH tercatat -- mis. salah
+ * ketik nama penerima saat lapor lewat /report. /report sengaja menolak
+ * (409) menimpa laporan yang sudah ada dan mengarahkan ke jalur ini.
+ *
+ * Mencerminkan PATCH /results/:id/ack-critical sisi LIS (lihat results.js):
+ * alasan koreksi wajib, nilai lama disimpan ke lab_result_critical_revisions
+ * SEBELUM ditimpa (simpanRevisiKritis) -- tidak ada yang hilang diam-diam.
+ * Digerbangi requirePermission('results.correct'), bukan 'results.manage',
+ * karena endpoint ini SELALU berarti koreksi, tidak pernah pelaporan pertama.
+ *
+ * Body: { simrs_user_id (wajib, lihat resolveSimrsUser),
+ *         reported_to (wajib), reported_via, readback, note,
+ *         reason (wajib, alasan koreksi) }
+ */
+router.post('/result/:id/report/correct', resolveSimrsUser, requirePermission('results.correct'), async (req, res) => {
+  const { reported_to, reported_via, readback, note, reason } = req.body || {};
+  if (!reported_to || !String(reported_to).trim()) {
+    return res.status(400).json({ error: 'reported_to wajib diisi (nama yang dihubungi).' });
+  }
+  if (!reason || !String(reason).trim()) {
+    return res.status(400).json({ error: 'reason wajib diisi (alasan koreksi).' });
+  }
+  try {
+    const [[hasil]] = await pool.query(
+      'SELECT id, critical_ack FROM lab_results WHERE id = ?',
+      [req.params.id]
+    );
+    if (!hasil) return res.status(404).json({ error: 'Hasil tidak ditemukan.' });
+    if (!hasil.critical_ack) {
+      return res.status(409).json({ error: 'Hasil ini belum pernah dilaporkan -- gunakan POST /report, bukan /report/correct.' });
+    }
+
+    await simpanRevisiKritis(req.params.id, req.user.id, String(reason).trim());
+
+    await pool.query(
+      `UPDATE lab_results
+          SET critical_ack_by = ?, critical_ack_at = NOW(),
+              critical_reported_to = ?, critical_reported_via = ?, critical_readback = ?, critical_note = ?
+        WHERE id = ?`,
+      [req.user.id, String(reported_to).trim(), reported_via || null, readback ? 1 : 0, note || null, req.params.id]
+    );
+    await audit(req, 'ACK', 'result', req.params.id, {
+      reported_to, reported_via, readback: !!readback, corrected: true, reason, source: 'bridging_report_correct',
+    });
+
+    res.json({ ok: true, reported_by: req.user.username });
+  } catch (err) {
+    res.status(500).json({ error: 'Gagal mencatat koreksi pelaporan', details: err.message });
   }
 });
 
