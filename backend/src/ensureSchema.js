@@ -546,6 +546,28 @@ export async function ensureSchema() {
   await ensureColumn('lab_results', 'corrected_by', 'ADD COLUMN corrected_by INT NULL');
   await ensureColumn('lab_results', 'revision_count', 'ADD COLUMN revision_count INT DEFAULT 0');
 
+  // --- Riwayat koreksi catatan pelaporan nilai kritis ---
+  //
+  // Sebelum ini, memperbaiki salah ketik pada "dilaporkan kepada siapa" dsb.
+  // (lewat PATCH /results/:id/ack-critical) menimpa catatan lama tanpa jejak.
+  // Lihat services/revisiHasil.js simpanRevisiKritis().
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS lab_result_critical_revisions (
+       id BIGINT PRIMARY KEY AUTO_INCREMENT,
+       result_id BIGINT NOT NULL,
+       reported_to VARCHAR(255) NULL COMMENT 'nilai SEBELUM dikoreksi',
+       reported_via VARCHAR(50) NULL,
+       readback TINYINT(1) NULL,
+       note VARCHAR(500) NULL,
+       ack_by INT NULL,
+       ack_at TIMESTAMP NULL,
+       changed_by INT NULL,
+       changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+       reason VARCHAR(255) NULL,
+       INDEX idx_result (result_id, changed_at)
+     )`
+  ).catch((e) => console.warn('[schema] lab_result_critical_revisions:', e.message));
+
   // --- Kelengkapan laporan hasil (PMK 43/2013 Bab IX, komponen 4, 5, 7, 11) ---
   //
   // requested_by menunjuk user LIS, bukan dokter yang meminta pemeriksaan.

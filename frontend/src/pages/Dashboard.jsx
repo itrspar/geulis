@@ -1,17 +1,22 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
+import { useAuth } from '../context/AuthContext';
 import Swal from 'sweetalert2';
 
 export default function Dashboard() {
+  const { can } = useAuth();
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
   const [critical, setCritical] = useState([]);
+  const [criticalHistory, setCriticalHistory] = useState([]);
 
   const loadCritical = () => api.results.criticalUnacked().then(setCritical).catch(() => {});
+  const loadCriticalHistory = () => api.results.criticalLog().then((rows) => setCriticalHistory(rows.slice(0, 15))).catch(() => {});
 
   useEffect(() => {
     api.dashboard().then(setData).catch((e) => setErr(e.message));
     loadCritical();
+    loadCriticalHistory();
     const t = setInterval(loadCritical, 20000);
     return () => clearInterval(t);
   }, []);
@@ -59,6 +64,60 @@ export default function Dashboard() {
     try {
       await api.results.ackCritical(r.id, res.value);
       loadCritical();
+      loadCriticalHistory();
+    } catch (e) {
+      Swal.fire('Gagal', e.message, 'error');
+    }
+  };
+
+  // Koreksi catatan pelaporan yang SUDAH tercatat -- mis. salah ketik nama
+  // dokter dari SIMRS. Beda dari ack() di atas: field sudah terisi, dan
+  // alasan koreksi wajib diisi (tersimpan di riwayat, nilai lama tidak hilang).
+  const editAck = async (r) => {
+    const res = await Swal.fire({
+      title: 'Koreksi Laporan Nilai Kritis',
+      html:
+        `<p style="margin:0 0 .75rem"><b>${r.patient_name}</b> — ${r.test_name}: ` +
+        `<b style="color:#dc2626">${r.result_value} ${r.unit || ''}</b></p>` +
+        `<input id="lapor-ke" class="swal2-input" placeholder="Dilaporkan kepada (nama dokter/perawat)" value="${(r.critical_reported_to || '').replace(/"/g, '&quot;')}">` +
+        `<select id="lapor-via" class="swal2-input">` +
+        `<option value="telepon"${r.critical_reported_via === 'telepon' ? ' selected' : ''}>Telepon</option>` +
+        `<option value="wa"${r.critical_reported_via === 'wa' ? ' selected' : ''}>WhatsApp</option>` +
+        `<option value="lisan"${r.critical_reported_via === 'lisan' ? ' selected' : ''}>Lisan/langsung</option></select>` +
+        `<label style="display:flex;gap:.5rem;align-items:center;justify-content:center;margin:.5rem 0">` +
+        `<input type="checkbox" id="lapor-readback"${r.critical_readback ? ' checked' : ''}> Penerima membacakan ulang hasilnya</label>` +
+        `<input id="lapor-catatan" class="swal2-input" placeholder="Catatan (opsional)" value="${(r.critical_note || '').replace(/"/g, '&quot;')}">` +
+        `<input id="lapor-alasan" class="swal2-input" placeholder="Alasan koreksi (wajib, mis. salah ketik dari SIMRS)">`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Simpan koreksi',
+      cancelButtonText: 'Batal',
+      confirmButtonColor: '#dc2626',
+      focusConfirm: false,
+      preConfirm: () => {
+        const kepada = document.getElementById('lapor-ke').value.trim();
+        const alasan = document.getElementById('lapor-alasan').value.trim();
+        if (!kepada) {
+          Swal.showValidationMessage('Nama dokter/perawat yang dihubungi wajib diisi');
+          return false;
+        }
+        if (!alasan) {
+          Swal.showValidationMessage('Alasan koreksi wajib diisi');
+          return false;
+        }
+        return {
+          reported_to: kepada,
+          reported_via: document.getElementById('lapor-via').value,
+          readback: document.getElementById('lapor-readback').checked,
+          note: document.getElementById('lapor-catatan').value.trim() || null,
+          reason: alasan,
+        };
+      },
+    });
+    if (!res.isConfirmed) return;
+    try {
+      await api.results.ackCritical(r.id, res.value);
+      loadCriticalHistory();
     } catch (e) {
       Swal.fire('Gagal', e.message, 'error');
     }
@@ -131,6 +190,31 @@ export default function Dashboard() {
           </table>
         </div>
       )}
+
+      {criticalHistory.length > 0 && (
+        <div className="card" style={{ marginBottom: '1.25rem' }}>
+          <h2 style={{ marginTop: 0 }}>Riwayat Pelaporan Nilai Kritis</h2>
+          <table>
+            <thead><tr><th>Pasien</th><th>Pemeriksaan</th><th>Nilai</th><th>Dilaporkan ke</th><th>Via</th><th>Waktu</th>{can('results.correct') && <th></th>}</tr></thead>
+            <tbody>
+              {criticalHistory.map((r) => (
+                <tr key={r.id}>
+                  <td>{r.patient_name}</td>
+                  <td>{r.test_name}</td>
+                  <td>{r.result_value} {r.unit || ''}</td>
+                  <td>{r.critical_reported_to}</td>
+                  <td>{r.critical_reported_via}</td>
+                  <td>{r.critical_ack_at ? new Date(r.critical_ack_at).toLocaleString('id-ID') : '—'}</td>
+                  {can('results.correct') && (
+                    <td><button type="button" className="secondary btn-sm" onClick={() => editAck(r)}>Koreksi</button></td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <div className="stats-grid">
         <div className="stat card">
           <span className="stat-label">Permintaan Pending</span>

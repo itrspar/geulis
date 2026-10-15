@@ -3,7 +3,7 @@ import pool from '../config/db.js';
 import { authenticate, requirePermission, punyaHak } from '../middleware/auth.js';
 import { nilaiHasil } from '../services/flags.js';
 import { konteksPasien } from '../services/konteksPasien.js';
-import { simpanRevisi } from '../services/revisiHasil.js';
+import { simpanRevisi, simpanRevisiKritis } from '../services/revisiHasil.js';
 import { audit } from '../services/audit.js';
 import { pushRequestResultsToSimrs } from '../services/simrsPush.js';
 import { rujukanBerlaku, labelRujukan, umurHari, SUMBER_SIMRS } from '../services/rujukanUmur.js';
@@ -568,11 +568,29 @@ router.post('/verify-group', authenticate, requirePermission('results.manage'), 
 // benar-benar mengubah angka merah jadi tindakan adalah catatan: siapa yang
 // dihubungi, lewat apa, dan apakah angkanya dibacakan ulang oleh penerima.
 // Nama penerima wajib diisi; tanpa itu catatannya tidak membuktikan apa pun.
-router.patch('/:id/ack-critical', authenticate, requirePermission('results.view'), async (req, res) => {
-  const { reported_to, reported_via, readback, note } = req.body || {};
+router.patch('/:id/ack-critical', authenticate, requirePermission('results.manage'), async (req, res) => {
+  const { reported_to, reported_via, readback, note, reason } = req.body || {};
   if (!reported_to || !String(reported_to).trim()) {
     return res.status(400).json({ error: 'Nama dokter/perawat yang dihubungi wajib diisi' });
   }
+  const [[hasil]] = await pool.query('SELECT critical_ack FROM lab_results WHERE id = ?', [req.params.id]);
+  if (!hasil) return res.status(404).json({ error: 'Hasil tidak ditemukan' });
+
+  // Mengubah catatan yang SUDAH tercatat adalah koreksi, bukan pelaporan
+  // pertama kali -- butuh hak yang sama dengan perbaikan nilai hasil
+  // (results.correct), dan alasannya wajib tercatat (PMK 24/2022 Pasal 29).
+  if (hasil.critical_ack) {
+    if (!(await punyaHak(req, 'results.correct'))) {
+      return res.status(403).json({
+        error: 'Laporan ini sudah tercatat. Mengubahnya butuh hak "Perbaiki/Hapus Hasil".',
+      });
+    }
+    if (!reason || !String(reason).trim()) {
+      return res.status(400).json({ error: 'Alasan koreksi wajib diisi saat mengubah laporan yang sudah tercatat' });
+    }
+    await simpanRevisiKritis(req.params.id, req.user.id, String(reason).trim());
+  }
+
   await pool.query(
     `UPDATE lab_results
         SET critical_ack = 1, critical_ack_by = ?, critical_ack_at = NOW(),
@@ -580,8 +598,26 @@ router.patch('/:id/ack-critical', authenticate, requirePermission('results.view'
       WHERE id = ?`,
     [req.user.id, String(reported_to).trim(), reported_via || null, readback ? 1 : 0, note || null, req.params.id]
   );
-  await audit(req, 'ACK', 'result', req.params.id, { reported_to, reported_via, readback: !!readback });
+  await audit(req, 'ACK', 'result', req.params.id, {
+    reported_to, reported_via, readback: !!readback,
+    corrected: !!hasil.critical_ack, reason: hasil.critical_ack ? reason : undefined,
+  });
   res.json({ ok: true });
+});
+
+// Riwayat koreksi catatan pelaporan nilai kritis (nama dikoreksi, kapan, oleh
+// siapa, alasannya) -- untuk telusur akreditasi, sama seperti /:id/revisions.
+router.get('/:id/critical-revisions', authenticate, requirePermission('results.view'), async (req, res) => {
+  const [rows] = await pool.query(
+    `SELECT rev.id, rev.reported_to, rev.reported_via, rev.readback, rev.note,
+            rev.ack_at, rev.changed_at, rev.reason, u.full_name AS diubah_oleh
+       FROM lab_result_critical_revisions rev
+       LEFT JOIN users u ON u.id = rev.changed_by
+      WHERE rev.result_id = ?
+      ORDER BY rev.changed_at ASC`,
+    [req.params.id]
+  );
+  res.json(rows);
 });
 
 // Riwayat pelaporan nilai kritis, untuk telusur akreditasi.

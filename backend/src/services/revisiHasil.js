@@ -32,3 +32,43 @@ export async function simpanRevisi(resultId, userId, alasan = null) {
 
   return true;
 }
+
+/**
+ * Riwayat koreksi catatan PELAPORAN NILAI KRITIS (siapa dihubungi, lewat
+ * apa, dibacakan ulang atau tidak) -- berbeda dari simpanRevisi() di atas,
+ * yang mencatat koreksi NILAI hasilnya.
+ *
+ * Dibutuhkan karena pelaporan kritis kadang salah ketik di sisi pelapor
+ * (nama penerima, cara lapor) sesudah tercatat -- lihat diskusi "lapor
+ * kritis menyusul" (POST /bridging/result/:id/report sengaja menolak
+ * menimpa lewat jalur bridging, koreksi harus lewat LIS). Alasan koreksi
+ * wajib diisi di endpoint pemanggil.
+ */
+export async function simpanRevisiKritis(resultId, userId, alasan) {
+  const [[lama]] = await pool.query(
+    `SELECT critical_reported_to, critical_reported_via, critical_readback, critical_note,
+            critical_ack_by, critical_ack_at
+       FROM lab_results WHERE id = ?`,
+    [resultId]
+  ).catch(() => [[]]);
+  if (!lama) return false;
+
+  await pool.query(
+    `INSERT INTO lab_result_critical_revisions
+       (result_id, reported_to, reported_via, readback, note, ack_by, ack_at, changed_by, reason)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      resultId,
+      lama.critical_reported_to,
+      lama.critical_reported_via,
+      lama.critical_readback,
+      lama.critical_note,
+      lama.critical_ack_by,
+      lama.critical_ack_at,
+      userId ?? null,
+      alasan,
+    ]
+  ).catch((e) => console.error('Gagal menyimpan revisi pelaporan kritis:', e.message));
+
+  return true;
+}
