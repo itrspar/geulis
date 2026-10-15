@@ -6,6 +6,15 @@ import { audit } from '../services/audit.js';
 
 const router = Router();
 
+function validasiKompleksitasPassword(password) {
+  if (!password || password.length < 8) return 'Password minimal 8 karakter';
+  if (!/[A-Z]/.test(password)) return 'Password harus mengandung huruf besar';
+  if (!/[a-z]/.test(password)) return 'Password harus mengandung huruf kecil';
+  if (!/[0-9]/.test(password)) return 'Password harus mengandung angka';
+  if (!/[^A-Za-z0-9]/.test(password)) return 'Password harus mengandung karakter khusus (misalnya *,#,$,!,&)';
+  return null;
+}
+
 router.get('/roles', authenticate, requirePermission('users.view'), async (req, res) => {
   const [roles] = await pool.query('SELECT * FROM roles');
   const [perms] = await pool.query('SELECT * FROM permissions ORDER BY menu_key, code');
@@ -34,7 +43,9 @@ router.get('/', authenticate, requirePermission('users.view'), async (req, res) 
 
 router.post('/', authenticate, requirePermission('users.manage'), async (req, res) => {
   const { username, password, full_name, email, role_id } = req.body;
-  const hash = await bcrypt.hash(password || 'changeme', 10);
+  const errPassword = validasiKompleksitasPassword(password);
+  if (errPassword) return res.status(400).json({ error: errPassword });
+  const hash = await bcrypt.hash(password, 10);
   const [r] = await pool.query(
     'INSERT INTO users (username, password_hash, full_name, email, role_id) VALUES (?, ?, ?, ?, ?)',
     [username, hash, full_name, email, role_id]
@@ -45,9 +56,8 @@ router.post('/', authenticate, requirePermission('users.manage'), async (req, re
 
 router.patch('/:id/password', authenticate, requirePermission('users.manage'), async (req, res) => {
   const { password } = req.body;
-  if (!password || password.length < 6) {
-    return res.status(400).json({ error: 'Password minimal 6 karakter' });
-  }
+  const errPassword = validasiKompleksitasPassword(password);
+  if (errPassword) return res.status(400).json({ error: errPassword });
   const hash = await bcrypt.hash(password, 10);
   await pool.query('UPDATE users SET password_hash=? WHERE id=?', [hash, req.params.id]);
   await audit(req, 'UPDATE', 'user', req.params.id, { password_changed: true });
@@ -69,6 +79,8 @@ router.delete('/:id', authenticate, requirePermission('users.manage'), async (re
 router.put('/:id', authenticate, requirePermission('users.manage'), async (req, res) => {
   const { full_name, email, role_id, is_active, password } = req.body;
   if (password) {
+    const errPassword = validasiKompleksitasPassword(password);
+    if (errPassword) return res.status(400).json({ error: errPassword });
     const hash = await bcrypt.hash(password, 10);
     await pool.query('UPDATE users SET password_hash=? WHERE id=?', [hash, req.params.id]);
   }

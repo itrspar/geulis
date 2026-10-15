@@ -86,6 +86,7 @@ th { color: var(--muted); font-weight: 500; font-size: 0.75rem; text-transform: 
 
 .form-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
 .form-group label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.35rem; }
+.field-hint { display: block; font-size: 0.75rem; color: var(--muted); margin-top: 0.3rem; }
 
 .page-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 1.25rem; }
 .error-msg { color: var(--danger); font-size: 0.875rem; margin-top: 0.5rem; }

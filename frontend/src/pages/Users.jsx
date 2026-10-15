@@ -43,9 +43,13 @@ export default function Users() {
 
   const createUser = async (e) => {
     e.preventDefault();
-    await api.users.create({ ...form, role_id: Number(form.role_id) });
-    setForm({ username: '', password: '', full_name: '', email: '', role_id: 2 });
-    load();
+    try {
+      await api.users.create({ ...form, role_id: Number(form.role_id) });
+      setForm({ username: '', password: '', full_name: '', email: '', role_id: 2 });
+      load();
+    } catch (err) {
+      Swal.fire('Gagal', err.message, 'error');
+    }
   };
 
   const savePerms = async () => {
@@ -60,10 +64,14 @@ export default function Users() {
 
   const savePassword = async (e) => {
     e.preventDefault();
-    await api.users.setPassword(pwdModal.id, newPassword);
-    setPwdModal(null);
-    setNewPassword('');
-    Swal.fire('Berhasil', 'Password diperbarui', 'success');
+    try {
+      await api.users.setPassword(pwdModal.id, newPassword);
+      setPwdModal(null);
+      setNewPassword('');
+      Swal.fire('Berhasil', 'Password diperbarui', 'success');
+    } catch (err) {
+      Swal.fire('Gagal', err.message, 'error');
+    }
   };
 
   const deleteUser = async (u) => {
@@ -100,7 +108,11 @@ export default function Users() {
               <h2 className="section-title">Tambah User</h2>
               <div className="form-grid">
                 <div className="form-group"><label>Username</label><input required value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} /></div>
-                <div className="form-group"><label>Password</label><input type="password" required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>
+                <div className="form-group">
+                  <label>Password</label>
+                  <input type="password" required minLength={8} title="Minimal 8 karakter, kombinasi huruf besar, huruf kecil, angka, dan karakter khusus" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+                  <small className="field-hint">Min. 8 karakter: huruf besar, huruf kecil, angka, karakter khusus</small>
+                </div>
                 <div className="form-group"><label>Nama Lengkap</label><input required value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} /></div>
                 <div className="form-group"><label>Email</label><input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
                 <div className="form-group">
@@ -180,7 +192,8 @@ export default function Users() {
             <h2 className="section-title">Ubah Password — {pwdModal.username}</h2>
             <div className="form-group">
               <label>Password Baru</label>
-              <input type="password" required minLength={6} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} autoFocus />
+              <input type="password" required minLength={8} title="Minimal 8 karakter, kombinasi huruf besar, huruf kecil, angka, dan karakter khusus" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} autoFocus />
+              <small className="field-hint">Min. 8 karakter: huruf besar, huruf kecil, angka, karakter khusus</small>
             </div>
             <div className="modal-actions">
               <button type="submit">Simpan</button>
