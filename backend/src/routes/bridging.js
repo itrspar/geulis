@@ -8,6 +8,38 @@ import { rujukanBerlaku, labelRujukan, umurHari, kosongkanCacheRujukan, SUMBER_S
 import { kecocokanRequest, skorKecocokan } from '../services/kecocokanHasil.js';
 import { simpanRevisiKritis } from '../services/revisiHasil.js';
 
+/**
+ * Validasi `reported_at` opsional pada /report dan /report/correct -- waktu
+ * lapor SEBENARNYA yang diisi petugas di Khanza, beda dari saat endpoint ini
+ * dipanggil (petugas bisa menelepon dulu, mencatat belakangan).
+ *
+ * Dibandingkan sebagai DELTA terhadap `nowDbStr`/`resultAtStr` yang sama-sama
+ * diambil dari DATABASE (bukan `Date.now()` proses Node) dan diparse dengan
+ * cara yang sama -- supaya hasilnya tetap benar walau zona waktu proses Node
+ * berbeda dari sesi MySQL (lihat dateStrings:true di config/db.js, yang
+ * bikin semua ini plain string "yyyy-MM-dd HH:mm:ss" tanpa info zona).
+ */
+const TOLERANSI_MASA_DEPAN_MS = 5 * 60 * 1000;
+const RE_WAKTU_LAPOR = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+
+function validasiReportedAt(reportedAtStr, nowDbStr, resultAtStr) {
+  if (!RE_WAKTU_LAPOR.test(String(reportedAtStr))) {
+    return { error: 'reported_at harus berformat "yyyy-MM-dd HH:mm:ss"' };
+  }
+  const keTanggal = (s) => new Date(s.replace(' ', 'T'));
+  const reported = keTanggal(reportedAtStr);
+  if (isNaN(reported.getTime())) {
+    return { error: 'reported_at bukan tanggal/waktu yang valid' };
+  }
+  if (reported.getTime() > keTanggal(nowDbStr).getTime() + TOLERANSI_MASA_DEPAN_MS) {
+    return { error: 'reported_at tidak boleh di masa depan' };
+  }
+  if (resultAtStr && reported.getTime() < keTanggal(resultAtStr).getTime()) {
+    return { error: 'reported_at tidak boleh lebih awal dari waktu hasil tersedia (result_time)' };
+  }
+  return { value: reportedAtStr };
+}
+
 /** Umur dalam hari dari {nilai, satuan}. Satuan mengikuti konvensi menu
  *  Nilai Rujukan GeuLIS sendiri (hari/bulan/tahun) -- supaya SIMRS tidak
  *  perlu menghitung sendiri "6570 hari" untuk 18 tahun. */
@@ -558,20 +590,23 @@ router.post('/result/:id/verify', resolveSimrsUser, requirePermission('results.m
  * ini kelar dulu baru terkirim ke ruangan (lihat catatan di /verify).
  *
  * Body: { simrs_user_id (wajib, lihat resolveSimrsUser),
- *         reported_to (wajib), reported_via, readback, note }
+ *         reported_to (wajib), reported_via, readback, note,
+ *         reported_at (opsional, "yyyy-MM-dd HH:mm:ss") }
  *
- * Waktu lapor dicatat NOW() saat endpoint ini dipanggil -- TERPISAH dari
- * verified_at -- supaya jeda "hasil tersedia -> dilaporkan" tetap bisa
- * diukur walau dua langkahnya kini terpisah waktu.
+ * Waktu lapor dicatat NOW() saat endpoint ini dipanggil, KECUALI `reported_at`
+ * dikirim -- petugas kadang menelepon dulu, mencatat belakangan, dan jeda
+ * hasil->lapor adalah indikator mutu (PMK 43/2013) yang tidak boleh melebar
+ * semu hanya karena pencatatannya telat. Tanpa field ini: perilaku lama,
+ * NOW(). Lihat validasiReportedAt() untuk aturan validasinya.
  */
 router.post('/result/:id/report', resolveSimrsUser, requirePermission('results.manage'), async (req, res) => {
-  const { reported_to, reported_via, readback, note } = req.body || {};
+  const { reported_to, reported_via, readback, note, reported_at } = req.body || {};
   if (!reported_to || !String(reported_to).trim()) {
     return res.status(400).json({ error: 'reported_to wajib diisi (nama yang dihubungi).' });
   }
   try {
     const [[hasil]] = await pool.query(
-      'SELECT id, critical_ack FROM lab_results WHERE id = ?',
+      'SELECT id, critical_ack, result_at, NOW() AS now_db FROM lab_results WHERE id = ?',
       [req.params.id]
     );
     if (!hasil) return res.status(404).json({ error: 'Hasil tidak ditemukan.' });
@@ -579,14 +614,21 @@ router.post('/result/:id/report', resolveSimrsUser, requirePermission('results.m
       return res.status(409).json({ error: 'Hasil ini sudah dilaporkan sebelumnya -- gunakan POST /report/correct (atau koreksi lewat LIS), bukan menimpa lewat jalur ini.' });
     }
 
+    let ackAt = null;
+    if (reported_at) {
+      const v = validasiReportedAt(reported_at, hasil.now_db, hasil.result_at);
+      if (v.error) return res.status(400).json({ error: v.error });
+      ackAt = v.value;
+    }
+
     await pool.query(
       `UPDATE lab_results
-          SET critical_ack = 1, critical_ack_by = ?, critical_ack_at = NOW(),
+          SET critical_ack = 1, critical_ack_by = ?, critical_ack_at = COALESCE(?, NOW()),
               critical_reported_to = ?, critical_reported_via = ?, critical_readback = ?, critical_note = ?
         WHERE id = ?`,
-      [req.user.id, String(reported_to).trim(), reported_via || null, readback ? 1 : 0, note || null, req.params.id]
+      [req.user.id, ackAt, String(reported_to).trim(), reported_via || null, readback ? 1 : 0, note || null, req.params.id]
     );
-    await audit(req, 'ACK', 'result', req.params.id, { reported_to, reported_via, readback: !!readback, source: 'bridging_report' });
+    await audit(req, 'ACK', 'result', req.params.id, { reported_to, reported_via, readback: !!readback, reported_at: ackAt, source: 'bridging_report' });
 
     res.json({ ok: true, reported_by: req.user.username });
   } catch (err) {
@@ -609,10 +651,18 @@ router.post('/result/:id/report', resolveSimrsUser, requirePermission('results.m
  *
  * Body: { simrs_user_id (wajib, lihat resolveSimrsUser),
  *         reported_to (wajib), reported_via, readback, note,
- *         reason (wajib, alasan koreksi) }
+ *         reason (wajib, alasan koreksi),
+ *         reported_at (opsional, "yyyy-MM-dd HH:mm:ss") }
+ *
+ * `reported_at` TIDAK dikirim -> `critical_ack_at` LAMA dipertahankan --
+ * koreksi ini membetulkan ISI catatan (nama penerima dsb.), bukan melapor
+ * ulang, jadi waktu lapornya semula tidak boleh ikut bergeser ke saat
+ * koreksi ini terjadi (kalau tidak, jeda hasil->lapor melebar semu setiap
+ * kali ada koreksi). Dikirim -> `critical_ack_at` diganti ke nilai itu,
+ * dipakai kalau yang salah memang waktunya.
  */
 router.post('/result/:id/report/correct', resolveSimrsUser, requirePermission('results.correct'), async (req, res) => {
-  const { reported_to, reported_via, readback, note, reason } = req.body || {};
+  const { reported_to, reported_via, readback, note, reason, reported_at } = req.body || {};
   if (!reported_to || !String(reported_to).trim()) {
     return res.status(400).json({ error: 'reported_to wajib diisi (nama yang dihubungi).' });
   }
@@ -621,7 +671,7 @@ router.post('/result/:id/report/correct', resolveSimrsUser, requirePermission('r
   }
   try {
     const [[hasil]] = await pool.query(
-      'SELECT id, critical_ack FROM lab_results WHERE id = ?',
+      'SELECT id, critical_ack, result_at, NOW() AS now_db FROM lab_results WHERE id = ?',
       [req.params.id]
     );
     if (!hasil) return res.status(404).json({ error: 'Hasil tidak ditemukan.' });
@@ -629,17 +679,24 @@ router.post('/result/:id/report/correct', resolveSimrsUser, requirePermission('r
       return res.status(409).json({ error: 'Hasil ini belum pernah dilaporkan -- gunakan POST /report, bukan /report/correct.' });
     }
 
+    let ackAt = null;
+    if (reported_at) {
+      const v = validasiReportedAt(reported_at, hasil.now_db, hasil.result_at);
+      if (v.error) return res.status(400).json({ error: v.error });
+      ackAt = v.value;
+    }
+
     await simpanRevisiKritis(req.params.id, req.user.id, String(reason).trim());
 
     await pool.query(
       `UPDATE lab_results
-          SET critical_ack_by = ?, critical_ack_at = NOW(),
+          SET critical_ack_by = ?, critical_ack_at = COALESCE(?, critical_ack_at),
               critical_reported_to = ?, critical_reported_via = ?, critical_readback = ?, critical_note = ?
         WHERE id = ?`,
-      [req.user.id, String(reported_to).trim(), reported_via || null, readback ? 1 : 0, note || null, req.params.id]
+      [req.user.id, ackAt, String(reported_to).trim(), reported_via || null, readback ? 1 : 0, note || null, req.params.id]
     );
     await audit(req, 'ACK', 'result', req.params.id, {
-      reported_to, reported_via, readback: !!readback, corrected: true, reason, source: 'bridging_report_correct',
+      reported_to, reported_via, readback: !!readback, corrected: true, reason, reported_at: ackAt, source: 'bridging_report_correct',
     });
 
     res.json({ ok: true, reported_by: req.user.username });

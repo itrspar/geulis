@@ -397,7 +397,8 @@ Body:
   "reported_to": "dr. Andi (wajib)",
   "reported_via": "Telepon",
   "readback": true,
-  "note": "Jabatan penerima: DPJP. Upaya gagal/eskalasi: ..."
+  "note": "Jabatan penerima: DPJP. Upaya gagal/eskalasi: ...",
+  "reported_at": "2026-10-16 14:05:00"
 }
 ```
 
@@ -406,10 +407,17 @@ Body:
   membuktikan apa pun.
 - `reported_via`, `readback`, `note` — opsional, sama arti seperti di
   `/verify`.
+- `reported_at` — **opsional**, format `"yyyy-MM-dd HH:mm:ss"`, zona waktu
+  server GeuLIS (sama dengan `result_time`). Dipakai kalau petugas menelepon
+  dulu dan mencatat belakangan, supaya waktu lapor yang tersimpan adalah
+  waktu sebenarnya, bukan waktu endpoint ini dipanggil. Tidak dikirim →
+  perilaku lama, waktu saat ini (`NOW()`).
+  Validasi: `400` kalau formatnya salah, kalau lebih dari 5 menit di masa
+  depan, atau kalau lebih awal dari `result_time` hasil ini.
 
-Waktu lapor dicatat **saat endpoint ini dipanggil**, terpisah dari waktu
-verifikasi — jeda "hasil tersedia → dilaporkan" tetap terukur walau kedua
-langkahnya kini terpisah waktu.
+Waktu lapor dicatat **saat endpoint ini dipanggil** (atau `reported_at` kalau
+dikirim), terpisah dari waktu verifikasi — jeda "hasil tersedia → dilaporkan"
+tetap terukur walau kedua langkahnya kini terpisah waktu.
 
 Sukses (`200`):
 
@@ -422,6 +430,7 @@ Error yang mungkin muncul:
 | Status | Kapan | Tindakan SIMRS |
 |---|---|---|
 | `400` | `reported_to` kosong | Tampilkan form pelaporan, kirim ulang dengan `reported_to` terisi |
+| `400` | `reported_at` formatnya salah, di masa depan (>5 menit), atau lebih awal dari `result_time` | Perbaiki nilai `reported_at`, atau jangan kirim field ini sama sekali |
 | `403` | `simrs_user_id` belum dipetakan / akun GeuLIS nonaktif | Minta admin LIS memetakan akun via menu Mapping SIMRS |
 | `404` | `result_id` tidak ditemukan | — |
 | `409` | Hasil ini sudah pernah dilaporkan sebelumnya | Jangan tampilkan lagi tombol "lapor" untuk hasil ini — muat ulang `GET /result`. Kalau memang salah ketik, panggil `POST /report/correct` di bawah (atau koreksi lewat LIS) — bukan menimpa lewat endpoint ini |
@@ -449,7 +458,8 @@ Body:
   "reported_via": "Telepon",
   "readback": true,
   "note": "...",
-  "reason": "Salah ketik nama penerima saat lapor sebelumnya (wajib)"
+  "reason": "Salah ketik nama penerima saat lapor sebelumnya (wajib)",
+  "reported_at": "2026-10-16 14:05:00"
 }
 ```
 
@@ -460,6 +470,12 @@ Body:
   `/report`; nilai yang dikirim MENIMPA catatan lama (ini bukan penggabungan
   field per field — kirim field yang tetap sama persis seperti nilainya
   semula).
+- `reported_at` — **opsional**, format dan aturan validasi sama seperti di
+  `/report`. **Tidak dikirim** → waktu lapor LAMA (`critical_ack_at`)
+  **dipertahankan** — koreksi ini membetulkan isi catatan, bukan melapor
+  ulang, jadi waktunya tidak boleh ikut bergeser ke saat koreksi terjadi.
+  **Dikirim** → waktu lapor diganti ke nilai itu; pakai ini kalau yang salah
+  memang waktunya (bukan cuma nama/cara lapor).
 
 Catatan lama (siapa dihubungi/lewat apa/dibacakan ulang atau tidak/waktu
 lapor lama) **tidak hilang** — tersimpan di riwayat internal GeuLIS, bisa
@@ -476,6 +492,7 @@ Error yang mungkin muncul:
 | Status | Kapan | Tindakan SIMRS |
 |---|---|---|
 | `400` | `reported_to` atau `reason` kosong | Tampilkan form koreksi, kedua field itu wajib diisi |
+| `400` | `reported_at` formatnya salah, di masa depan (>5 menit), atau lebih awal dari `result_time` | Perbaiki nilai `reported_at`, atau jangan kirim field ini sama sekali |
 | `403` | `simrs_user_id` belum dipetakan / akun nonaktif / akun terpetakan tidak punya hak `results.correct` | Minta admin LIS memetakan/memberi hak akun ini |
 | `404` | `result_id` tidak ditemukan | — |
 | `409` | Hasil ini **belum pernah** dilaporkan | Gunakan `POST /report`, bukan endpoint ini |

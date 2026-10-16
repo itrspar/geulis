@@ -591,9 +591,13 @@ router.patch('/:id/ack-critical', authenticate, requirePermission('results.manag
     await simpanRevisiKritis(req.params.id, req.user.id, String(reason).trim());
   }
 
+  // Koreksi membetulkan ISI catatan (nama penerima dsb.), bukan melapor
+  // ulang -- critical_ack_at TIDAK digeser ke saat koreksi, kalau tidak
+  // jeda hasil->lapor melebar semu setiap kali ada koreksi (lihat juga
+  // POST /bridging/result/:id/report/correct, kasus yang sama).
   await pool.query(
     `UPDATE lab_results
-        SET critical_ack = 1, critical_ack_by = ?, critical_ack_at = NOW(),
+        SET critical_ack = 1, critical_ack_by = ?, critical_ack_at = COALESCE(critical_ack_at, NOW()),
             critical_reported_to = ?, critical_reported_via = ?, critical_readback = ?, critical_note = ?
       WHERE id = ?`,
     [req.user.id, String(reported_to).trim(), reported_via || null, readback ? 1 : 0, note || null, req.params.id]
