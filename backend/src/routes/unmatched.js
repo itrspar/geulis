@@ -246,7 +246,11 @@ router.post('/:id/match', authenticate, requirePermission('results.manage'), asy
     if (!testId) continue;
 
     const [[test]] = await pool.query('SELECT * FROM lab_tests WHERE id = ?', [testId]);
-    const { flag } = await nilaiHasil(item.value, test, await konteksPasien(pasien.id));
+    const { flag, min: refMin, max: refMax, label: refLabel } = await nilaiHasil(
+      item.value,
+      test,
+      await konteksPasien(pasien.id)
+    );
     const delta = await hitungDelta(pasien.id, testId, item.value, test?.code, test?.delta_limit_percent);
     const numeric = parseFloat(item.value);
 
@@ -265,12 +269,14 @@ router.post('/:id/match', authenticate, requirePermission('results.manage'), asy
 
     await pool.query(
       `INSERT INTO lab_results (patient_id, test_id, request_id, request_item_id, result_value, result_numeric, unit, flag,
-                                instrument_id, raw_message, status, delta_percent, delta_flag)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'preliminary', ?, ?)`,
+                                instrument_id, raw_message, status, delta_percent, delta_flag,
+                                ref_min_dipakai, ref_max_dipakai, rujukan_label)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'preliminary', ?, ?, ?, ?, ?)`,
       [pasien.id, testId, requestItemId ? requestRow.id : null, requestItemId,
        item.value, isNaN(numeric) ? null : numeric, item.unit || test?.unit || '',
        flag, row.instrument_id, String(row.raw_message || '').slice(0, 5000),
-       delta?.percent ?? null, delta?.flag ?? 'none']
+       delta?.percent ?? null, delta?.flag ?? 'none',
+       refMin, refMax, refLabel]
     );
     if (requestItemId) {
       await pool.query("UPDATE lab_request_items SET status='done' WHERE id=?", [requestItemId]);

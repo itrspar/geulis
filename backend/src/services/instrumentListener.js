@@ -224,7 +224,11 @@ async function saveInstrumentResults(instrumentId, protocol, sampleId, results, 
     if (!testId) continue;
 
     const [[test]] = await pool.query('SELECT * FROM lab_tests WHERE id = ?', [testId]);
-    const { flag } = await nilaiHasil(item.value, test, await konteksPasien(patientId));
+    const { flag, min: refMin, max: refMax, label: refLabel } = await nilaiHasil(
+      item.value,
+      test,
+      await konteksPasien(patientId)
+    );
     const link = await findRequestLink(patientId, testId);
     if (link.ambigu) {
       console.warn(`[Instrument] ${test?.code} pasien ${patientId}: >1 permintaan terbuka sama-sama minta tes ini -- ditahan tanpa request_id, perlu ditautkan manual lewat Hasil Belum Cocok`);
@@ -233,8 +237,8 @@ async function saveInstrumentResults(instrumentId, protocol, sampleId, results, 
     // sebelumnya dan bukan hasil ini sendiri.
     const delta = await hitungDelta(patientId, testId, item.value, test?.code, test?.delta_limit_percent);
     const [insertResult] = await pool.query(
-      `INSERT INTO lab_results (patient_id, test_id, request_id, request_item_id, result_value, result_numeric, unit, flag, instrument_id, raw_message, status, delta_percent, delta_flag, sample_id_asal)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'preliminary', ?, ?, ?)`,
+      `INSERT INTO lab_results (patient_id, test_id, request_id, request_item_id, result_value, result_numeric, unit, flag, instrument_id, raw_message, status, delta_percent, delta_flag, sample_id_asal, ref_min_dipakai, ref_max_dipakai, rujukan_label)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'preliminary', ?, ?, ?, ?, ?, ?)`,
       [
         patientId,
         testId,
@@ -249,6 +253,9 @@ async function saveInstrumentResults(instrumentId, protocol, sampleId, results, 
         delta?.percent ?? null,
         delta?.flag ?? 'none',
         sampleId || null,
+        refMin,
+        refMax,
+        refLabel,
       ]
     );
     if (delta?.flag === 'check') {
